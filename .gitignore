@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Clinical and local data: never commit
+data/
+local-data/
+outputs/
+output/
+*_external_results/
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.fasta
+*.fa
+*.fna
+*.pdf
+*.tsv
+*.csv
+*.Rdata
+*.Rhistory
+*.log
+
+# Local application settings and audit output
+*.audit.json
+.igh-merge-settings.json

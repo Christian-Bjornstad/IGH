@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+python tools/check_no_clinical_data.py --staged
