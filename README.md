@@ -74,6 +74,9 @@ eksisterende output overskrives bare med `--overwrite`.
   V-region-indelsøk og CLL-subset 2/8.
 - ARResT-resultatet inkluderer subset, confidence, score og SeqCure-status.
 - Returnerte ID-er og sekvenser verifiseres mot den lokale batchen.
+- HTTPS bruker Windows sitt administrerte sertifikatlager, slik at godkjente
+  virksomhetssertifikater fra proxy/Ivanti kan verifiseres uten å slå av TLS-
+  kontrollen.
 - IMGT hentes som den komplette 11-filers resultatpakken, ikke bare AIRR-utdraget.
 - Råresultat, parametere og lokal ID-kobling lagres i kjøringsmappen under
   `YYYY_MM_DD_external_results`.

@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urljoin, urlparse
 
+from .tls import configure_system_trust_store
+
+configure_system_trust_store()
+
 import requests
 
 from .models import MergedRow
@@ -30,6 +34,16 @@ IUPAC_NUCLEOTIDES = frozenset("ACGTRYSWKMBDHVN")
 
 class ExternalAnalysisError(RuntimeError):
     """Ekstern analyse svarte ikke med et trygt, forventet resultat."""
+
+
+def _tls_error(service: str, exc: requests.exceptions.SSLError) -> ExternalAnalysisError:
+    return ExternalAnalysisError(
+        f"Kunne ikke kontakte {service} fordi HTTPS-sertifikatet ikke kunne "
+        "verifiseres mot Windows sitt sertifikatlager. Kjør INSTALLER PAKKER-"
+        "kommandoen på nytt etter siste oppdatering. Hvis feilen fortsetter, må "
+        "IT kontrollere at virksomhetens proxy-/Ivanti-rotsertifikat ligger i "
+        f"Windows Trusted Root Certification Authorities. Detaljer: {exc}"
+    )
 
 
 def normalize_sequence(sequence: str) -> str:
@@ -452,6 +466,8 @@ class ImgtClient:
         try:
             response = requests.post(IMGT_URL, data=data, timeout=self.timeout)
             response.raise_for_status()
+        except requests.exceptions.SSLError as exc:
+            raise _tls_error("IMGT", exc) from exc
         except requests.RequestException as exc:
             raise ExternalAnalysisError(f"Kunne ikke kontakte IMGT: {exc}") from exc
         _validate_response_size(response.content)
@@ -559,6 +575,8 @@ class ArrestClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
+        except requests.exceptions.SSLError as exc:
+            raise _tls_error("ARResT", exc) from exc
         except requests.RequestException as exc:
             raise ExternalAnalysisError(f"Kunne ikke kontakte ARResT: {exc}") from exc
         _validate_response_size(response.content)
@@ -576,6 +594,8 @@ class ArrestClient:
         try:
             result_response = requests.get(results_url, timeout=self.timeout)
             result_response.raise_for_status()
+        except requests.exceptions.SSLError as exc:
+            raise _tls_error("ARResT-resultatet", exc) from exc
         except requests.RequestException as exc:
             raise ExternalAnalysisError(f"Kunne ikke hente ARResT-resultatet: {exc}") from exc
         _validate_response_size(result_response.content)

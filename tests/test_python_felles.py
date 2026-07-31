@@ -16,6 +16,7 @@ def test_python_felles_requirements_are_pinned():
         "PyQt6==6.11.0",
         "reportlab==5.0.0",
         "requests==2.34.2",
+        "truststore==0.10.4",
     ]
 
 
@@ -30,4 +31,5 @@ def test_python_felles_scripts_use_expected_k_path_and_no_python_subprocess():
     assert "subprocess" not in installer
     assert "sys.executable" not in installer
     assert ".python_felles_packages" in installer
+    assert "requirements_sha256" in starter
     assert "exec(open(" in commands

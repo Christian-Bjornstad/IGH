@@ -5,6 +5,7 @@ Viktig:
 - Lim inn én hel kommandolinje og trykk Enter.
 - Ikke ta med >>>.
 - Installasjonen kjøres første gang og etter endringer i requirements.txt.
+- Etter denne TLS-oppdateringen må INSTALLER PAKKER kjøres én gang på nytt.
 - Startkommandoen brukes hver gang programmet skal åpnes.
 
 INSTALLER PAKKER
@@ -27,6 +28,11 @@ MERKNADER
 
 Pakkene installeres i .python_felles_packages i prosjektmappen. Det kreves
 derfor ikke skrivetilgang til den sentrale Python-installasjonen.
+
+Appen bruker Windows sitt administrerte sertifikatlager ved kontakt med IMGT
+og ARResT. Sertifikatkontrollen er aktiv. Hvis en sertifikatfeil fortsatt vises
+etter ny installasjon, må IT kontrollere virksomhetens proxy-/Ivanti-
+rotsertifikat i Windows Trusted Root Certification Authorities.
 
 Hvis jobbnettet ikke har tilgang til PyPI, kan IT eller en utviklings-PC legge
 Windows/Python 3.14-kompatible wheel-filer i en mappe kalt wheelhouse i

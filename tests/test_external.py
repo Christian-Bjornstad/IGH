@@ -4,6 +4,7 @@ import io
 import zipfile
 
 import pytest
+import requests
 
 from igh_merge.external import (
     ArrestClient,
@@ -266,6 +267,25 @@ def test_imgt_client_posts_no_local_sample(monkeypatch):
     assert "SYN_LOCAL_ONLY" not in captured["data"]["sequences"]
     assert captured["data"]["V_REGIONsearchIndel"] == "true"
     assert captured["data"]["cllSubsetSearch"] == "true"
+
+
+@pytest.mark.parametrize(
+    ("client", "service"),
+    [(ImgtClient(), "IMGT"), (ArrestClient(), "ARResT")],
+)
+def test_external_clients_explain_enterprise_tls_error(monkeypatch, client, service):
+    def fake_post(*args, **kwargs):
+        raise requests.exceptions.SSLError("self-signed certificate in certificate chain")
+
+    monkeypatch.setattr("igh_merge.external.requests.post", fake_post)
+    with pytest.raises(ExternalAnalysisError) as caught:
+        client.submit(candidate_batch())
+
+    message = str(caught.value)
+    assert service in message
+    assert "Windows sitt sertifikatlager" in message
+    assert "INSTALLER PAKKER" in message
+    assert "Trusted Root Certification Authorities" in message
 
 
 def test_arrest_client_posts_no_local_sample(monkeypatch):
