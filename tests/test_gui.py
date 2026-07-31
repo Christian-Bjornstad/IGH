@@ -27,6 +27,10 @@ def test_gui_has_required_norwegian_tabs():
     assert window.export_button.isEnabled() is False
     assert window.send_imgt_button.isEnabled() is False
     assert window.send_arrest_button.isEnabled() is False
+    assert window.highlight_excel_checkbox.text() == (
+        "Marker appens gule kandidatrader i Excel"
+    )
+    assert window.highlight_excel_checkbox.isChecked() is False
     window.close()
     assert app is not None
 

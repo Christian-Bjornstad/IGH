@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from openpyxl import load_workbook
@@ -8,6 +9,7 @@ from openpyxl import load_workbook
 from igh_merge.excel import HEADERS, ExcelReportWriter
 from igh_merge.models import MergedRow, SourceRow
 from igh_merge.privacy import PrivacyError
+from igh_merge.service import MergeService
 
 
 def sample_row(percent: float = 2.5, mutation: float | None = 7.7) -> MergedRow:
@@ -58,6 +60,39 @@ def test_blank_mutation_keeps_identity_formula(tmp_path: Path):
     assert workbook["Sheet1"]["I2"].value is None
     assert workbook["Sheet1"]["N2"].value == '=IF(I2="","",100-I2)'
     workbook.close()
+
+
+def test_selected_excel_rows_are_filled_yellow_across_all_columns(tmp_path: Path):
+    output = tmp_path / "yellow.xlsx"
+    rows = [sample_row(), sample_row(percent=1.0)]
+    ExcelReportWriter().write(rows, output, highlight_rows={0})
+
+    workbook = load_workbook(output, data_only=False)
+    sheet = workbook["Sheet1"]
+    assert all(cell.fill.fill_type == "solid" for cell in sheet[2])
+    assert all(cell.fill.fgColor.rgb.endswith("FFFF00") for cell in sheet[2])
+    assert all(cell.fill.fill_type is None for cell in sheet[3])
+    workbook.close()
+
+
+def test_service_uses_same_functional_candidates_for_excel_highlight(tmp_path: Path):
+    captured = {}
+
+    class CapturingWriter:
+        def write(self, rows, output, **options):
+            captured.update(options)
+            return output
+
+    rows = (sample_row(percent=2.5), sample_row(percent=2.49))
+    result = SimpleNamespace(rows=rows)
+    output = tmp_path / "merged.xlsx"
+
+    written = MergeService(writer=CapturingWriter()).export(
+        result, output, highlight_functional_rows=True
+    )
+
+    assert written == output
+    assert captured["highlight_rows"] == frozenset({0})
 
 
 def test_existing_output_is_not_silently_overwritten(tmp_path: Path):

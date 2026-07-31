@@ -61,6 +61,10 @@ eksisterende output overskrives bare med `--overwrite`.
    tjeneste om gangen. Selve Send-klikket er bekreftelsen.
 6. Eksporter én kompatibel merged-fane med 22 kolonner.
 
+I **Eksport** kan valget **Marker appens gule kandidatrader i Excel** slås
+på. Da farges de samme foreløpige Leader-kandidatene som er gule i appen,
+gult over hele raden i arbeidsboken. Valget er av som standard.
+
 ## IMGT og ARResT
 
 - Maksimalt 50 sekvenser sendes per batch.

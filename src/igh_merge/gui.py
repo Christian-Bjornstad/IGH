@@ -8,6 +8,7 @@ from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -47,6 +48,7 @@ from .external import (
     save_batch_mapping,
     save_imgt_result,
 )
+from .candidates import is_functional_group_candidate
 from .io import ValidationError
 from .models import MergeResult, QcItem
 from .privacy import PrivacyError, ensure_outside_git
@@ -333,9 +335,16 @@ class MainWindow(QMainWindow):
         self.export_button.setObjectName("PrimaryButton")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export_excel)
+        self.highlight_excel_checkbox = QCheckBox(
+            "Marker appens gule kandidatrader i Excel"
+        )
+        self.highlight_excel_checkbox.setToolTip(
+            "Farger de samme foreløpige Leader-kandidatene gult over alle 22 kolonner."
+        )
         grid.addWidget(QLabel("Output"), 0, 0)
         grid.addWidget(self.output_edit, 0, 1)
         grid.addWidget(output_browse, 0, 2)
+        grid.addWidget(self.highlight_excel_checkbox, 1, 0, 1, 2)
         grid.addWidget(self.export_button, 1, 2)
         layout.addWidget(excel_group)
         layout.addStretch()
@@ -526,27 +535,7 @@ class MainWindow(QMainWindow):
         """Mirror the yellow-row convention without making a clinical decision."""
         if not self.result:
             return False
-        leader = self.result.rows[result_index]
-        source = leader.source
-        if (
-            leader.target != "Leader"
-            or source.in_frame.strip().upper() != "Y"
-            or source.no_stop_codon.strip().upper() != "Y"
-        ):
-            return False
-        if source.percent_total_reads >= 2.5:
-            return True
-
-        label = f"Leader-{source.rank}"
-        return any(
-            row.sample == leader.sample
-            and row.target == "FR1"
-            and row.source.percent_total_reads >= 2.5
-            and row.source.in_frame.strip().upper() == "Y"
-            and row.source.no_stop_codon.strip().upper() == "Y"
-            and label in row.comment.replace("(", "").replace(")", "").split()
-            for row in self.result.rows
-        )
+        return is_functional_group_candidate(self.result.rows, result_index)
 
     def _selected_result_indices(self) -> tuple[int, ...]:
         indices: list[int] = []
@@ -788,7 +777,12 @@ class MainWindow(QMainWindow):
                 return
             overwrite = True
         try:
-            written = self.service.export(self.result, output, overwrite=overwrite)
+            written = self.service.export(
+                self.result,
+                output,
+                overwrite=overwrite,
+                highlight_functional_rows=self.highlight_excel_checkbox.isChecked(),
+            )
         except (OSError, PrivacyError, FileExistsError) as exc:
             QMessageBox.critical(self, "Eksport feilet", str(exc))
             return

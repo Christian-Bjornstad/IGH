@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .candidates import functional_group_candidate_indices
 from .excel import ExcelReportWriter
 from .io import RunDiscovery
 from .matching import annotate_exact_matches
@@ -36,5 +37,22 @@ class MergeService:
         qc = evaluate_qc(rows)
         return MergeResult(manifest, tuple(rows), qc)
 
-    def export(self, result: MergeResult, output: Path, *, overwrite: bool = False) -> Path:
-        return self.writer.write(result.rows, output, overwrite=overwrite)
+    def export(
+        self,
+        result: MergeResult,
+        output: Path,
+        *,
+        overwrite: bool = False,
+        highlight_functional_rows: bool = False,
+    ) -> Path:
+        highlight_rows = (
+            functional_group_candidate_indices(result.rows)
+            if highlight_functional_rows
+            else ()
+        )
+        return self.writer.write(
+            result.rows,
+            output,
+            overwrite=overwrite,
+            highlight_rows=highlight_rows,
+        )

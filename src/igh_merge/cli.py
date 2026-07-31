@@ -16,6 +16,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-samples", type=int, default=24)
     parser.add_argument("--allow-count-warning", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--highlight-yellow-rows",
+        action="store_true",
+        help="Marker appens foreløpige gule Leader-kandidater i Excel",
+    )
     return parser
 
 
@@ -32,7 +37,12 @@ def main(argv: list[str] | None = None) -> int:
         output = args.output or (
             result.manifest.run_directory / f"{result.manifest.run_date}_merged.xlsx"
         )
-        written = service.export(result, output, overwrite=args.overwrite)
+        written = service.export(
+            result,
+            output,
+            overwrite=args.overwrite,
+            highlight_functional_rows=args.highlight_yellow_rows,
+        )
         print(f"Skrev {len(result.rows)} rader til {written}")
         print(f"Kontroller: {result.qc.error_count} feil.")
         return 0

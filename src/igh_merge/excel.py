@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
-from openpyxl.styles import Alignment, Border, Font, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from .models import MergedRow
 from .privacy import ensure_outside_git
@@ -38,7 +39,14 @@ HEADERS = (
 
 
 class ExcelReportWriter:
-    def write(self, rows: tuple[MergedRow, ...] | list[MergedRow], output: Path, *, overwrite: bool = False) -> Path:
+    def write(
+        self,
+        rows: tuple[MergedRow, ...] | list[MergedRow],
+        output: Path,
+        *,
+        overwrite: bool = False,
+        highlight_rows: Iterable[int] = (),
+    ) -> Path:
         output = output.expanduser().resolve()
         if output.suffix.lower() != ".xlsx":
             output = output.with_suffix(".xlsx")
@@ -80,7 +88,7 @@ class ExcelReportWriter:
                 ]
             )
 
-        self._format(worksheet, len(rows) + 1)
+        self._format(worksheet, len(rows) + 1, frozenset(highlight_rows))
         workbook.calculation.fullCalcOnLoad = True
         workbook.calculation.forceFullCalc = True
         workbook.calculation.calcMode = "auto"
@@ -98,7 +106,9 @@ class ExcelReportWriter:
             temporary.unlink(missing_ok=True)
         return output
 
-    def _format(self, worksheet, last_row: int) -> None:
+    def _format(
+        self, worksheet, last_row: int, highlight_rows: frozenset[int]
+    ) -> None:
         thin = Side(style="thin", color="D9D9D9")
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
         for cell in worksheet[1]:
@@ -107,11 +117,16 @@ class ExcelReportWriter:
             cell.border = border
         worksheet.row_dimensions[1].height = 28
 
-        for row in worksheet.iter_rows(min_row=2, max_row=last_row, min_col=1, max_col=22):
+        yellow_fill = PatternFill(fill_type="solid", fgColor="FFFF00")
+        for result_index, row in enumerate(
+            worksheet.iter_rows(min_row=2, max_row=last_row, min_col=1, max_col=22)
+        ):
             for cell in row:
                 cell.font = Font(name="Calibri", size=11, color="000000")
                 cell.alignment = Alignment(vertical="center")
                 cell.border = border
+                if result_index in highlight_rows:
+                    cell.fill = yellow_fill
             row[14].font = Font(name="Calibri", size=11, bold=True, color="000000")
             # Behold kompakte rader som i referansefilen. FASTA-innholdet kan
             # leses i formellinjen uten at hele sekvensen blåser opp radhøyden.
