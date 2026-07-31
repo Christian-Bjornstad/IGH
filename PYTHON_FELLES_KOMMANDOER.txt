@@ -1,0 +1,36 @@
+IGH-APP - KOMMANDOER FOR PYTHON FELLES
+
+Viktig:
+- Åpne Python Felles gjennom Ivanti/Workspace Control først.
+- Lim inn én hel kommandolinje og trykk Enter.
+- Ikke ta med >>>.
+- Installasjonen kjøres første gang og etter endringer i requirements.txt.
+- Startkommandoen brukes hver gang programmet skal åpnes.
+
+INSTALLER PAKKER
+
+exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\install_python_felles_KDI.py", encoding="utf-8").read())
+
+START PROGRAMMET
+
+exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\start_python_felles_KDI.py", encoding="utf-8").read())
+
+FILER SOM SKAL LIGGE I PROSJEKTMAPPEN
+
+install_python_felles_KDI.py
+start_python_felles_KDI.py
+requirements.txt
+qt_app.py
+src-mappen
+
+MERKNADER
+
+Pakkene installeres i .python_felles_packages i prosjektmappen. Det kreves
+derfor ikke skrivetilgang til den sentrale Python-installasjonen.
+
+Hvis jobbnettet ikke har tilgang til PyPI, kan IT eller en utviklings-PC legge
+Windows/Python 3.14-kompatible wheel-filer i en mappe kalt wheelhouse i
+prosjektmappen. Installasjonsskriptet bruker denne automatisk uten nettilgang.
+
+Vanlig BAT-fil eller Windows-snarvei brukes ikke. Python Felles åpnes først,
+og deretter limes kommandoen inn.

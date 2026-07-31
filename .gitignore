@@ -6,6 +6,9 @@ __pycache__/
 htmlcov/
 .venv/
 venv/
+.python_felles_packages/
+.python_felles_state.json
+wheelhouse/
 dist/
 build/
 *.egg-info/

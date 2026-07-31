@@ -34,6 +34,14 @@ På Windows kan GUI-et også startes med:
 .\Start-IGH-Merge.ps1
 ```
 
+### Python Felles / Ivanti
+
+På KDI-PC-er der `python.exe`, BAT og vanlige snarveier er blokkert, åpnes
+**Python Felles** først. Bruk deretter de ferdige kommandoene i
+`PYTHON_FELLES_KOMMANDOER.txt`. Installereren legger pakkene lokalt i
+prosjektmappen og krever ikke skrivetilgang til den sentrale
+Python-installasjonen.
+
 Kommandolinje:
 
 ```powershell
