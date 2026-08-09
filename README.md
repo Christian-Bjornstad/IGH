@@ -3,6 +3,10 @@
 Norsk desktopapplikasjon for lokal sammenslåing og kontroll av
 LymphoTrack IGHV-SHM-resultater.
 
+Grensesnittet bruker et tilgjengelig, dataorientert designsystem med tydelig
+arbeidsflyt og status. Appikonet viser to sekvensstrømmer som flettes til en
+strukturert resultatfil.
+
 ## Personvern
 
 Merge og filbehandling skjer lokalt. Ekstern analyse skjer bare når brukeren

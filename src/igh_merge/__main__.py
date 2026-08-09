@@ -4,7 +4,7 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from .gui import MainWindow
+from .gui import MainWindow, application_icon
 
 _OPEN_WINDOWS: list[MainWindow] = []
 
@@ -15,6 +15,8 @@ def main() -> int:
     if app is None:
         app = QApplication(sys.argv)
     app.setApplicationName("IGH Merge")
+    app.setApplicationDisplayName("IGH Merge")
+    app.setWindowIcon(application_icon())
     window = MainWindow()
     _OPEN_WINDOWS.append(window)
     window.destroyed.connect(

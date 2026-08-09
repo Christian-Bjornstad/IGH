@@ -4,7 +4,7 @@ from functools import partial
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QSettings, QThread, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -57,31 +58,48 @@ from .service import MergeService
 
 
 class Palette:
-    ink = "#17212B"
-    muted = "#5E6A73"
+    ink = "#0F172A"
+    muted = "#475569"
     panel = "#FFFFFF"
-    app_bg = "#F4F7F9"
-    border = "#CBD7E1"
-    navy = "#163B5C"
-    blue = "#2F75B5"
-    green = "#3E7D4A"
-    red = "#A92525"
-    pale_green = "#EAF5ED"
-    pale_red = "#F8E8E8"
+    app_bg = "#F8FAFC"
+    subtle = "#F1F5F9"
+    border = "#CBD5E1"
+    navy = "#1E3A5F"
+    blue = "#2563EB"
+    blue_hover = "#1D4ED8"
+    green = "#15803D"
+    red = "#B91C1C"
+    amber = "#B45309"
+    pale_blue = "#EFF6FF"
+    pale_green = "#F0FDF4"
+    pale_red = "#FEF2F2"
+    pale_amber = "#FFFBEB"
     functional_yellow = "#FFFF00"
     excluded_gray = "#D9D9D9"
 
 
+APP_ICON_PATH = Path(__file__).resolve().parent / "assets" / "igh-merge-icon.ico"
+
+
+def application_icon() -> QIcon:
+    return QIcon(str(APP_ICON_PATH)) if APP_ICON_PATH.is_file() else QIcon()
+
+
 class MetricCard(QFrame):
-    def __init__(self, label: str, color: str):
+    def __init__(self, label: str, description: str, color: str):
         super().__init__()
         self.setObjectName("MetricCard")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(3)
+        eyebrow = QLabel(label.upper())
+        eyebrow.setObjectName("MetricLabel")
         self.value = QLabel("0")
-        self.value.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
+        self.value.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         self.value.setStyleSheet(f"color: {color}")
-        caption = QLabel(label)
-        caption.setStyleSheet(f"color: {Palette.muted}")
+        caption = QLabel(description)
+        caption.setObjectName("MetricDescription")
+        layout.addWidget(eyebrow)
         layout.addWidget(self.value)
         layout.addWidget(caption)
 
@@ -169,57 +187,117 @@ class MainWindow(QMainWindow):
         self._external_thread: QThread | None = None
         self._external_worker: ExternalWorker | None = None
         self.setWindowTitle("IGH Merge")
-        self.resize(1320, 850)
+        self.setWindowIcon(application_icon())
+        self.setMinimumSize(1040, 720)
+        self.resize(1380, 900)
         self._build()
         self._style()
+        self._set_status("Klar", "neutral")
+        self._apply_interaction_cursors()
 
     def _build(self) -> None:
         root = QWidget()
+        root.setObjectName("AppRoot")
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(18, 16, 18, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(22, 18, 22, 14)
+        layout.setSpacing(14)
 
-        header = QHBoxLayout()
+        header_panel = QFrame()
+        header_panel.setObjectName("AppHeader")
+        header = QHBoxLayout(header_panel)
+        header.setContentsMargins(18, 14, 18, 14)
+        header.setSpacing(14)
+        brand_icon = QLabel()
+        brand_icon.setObjectName("BrandIcon")
+        brand_icon.setFixedSize(56, 56)
+        brand_icon.setPixmap(application_icon().pixmap(48, 48))
+        brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_icon.setAccessibleName("IGH Merge appikon")
+        header.addWidget(brand_icon)
         title_box = QVBoxLayout()
+        title_box.setSpacing(1)
+        eyebrow = QLabel("MOLEKYLÆRPATOLOGI  /  LOKAL ARBEIDSFLYT")
+        eyebrow.setObjectName("Eyebrow")
         title = QLabel("IGH Merge")
-        title.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Palette.navy}")
-        subtitle = QLabel("Lokal sammenslåing og kontroll av IGHV-SHM")
-        subtitle.setStyleSheet(f"color: {Palette.muted}")
+        title.setObjectName("AppTitle")
+        subtitle = QLabel("Sammenslåing, ekstern analyse og eksport av IGHV-SHM")
+        subtitle.setObjectName("AppSubtitle")
+        title_box.addWidget(eyebrow)
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
         header.addLayout(title_box)
         header.addStretch()
+        privacy = QLabel("LOKAL OG SPORBAR")
+        privacy.setObjectName("PrivacyBadge")
+        privacy.setToolTip(
+            "Råfiler og koblingsdata lagres lokalt. Ekstern sending bekreftes eksplisitt."
+        )
+        privacy.setFixedHeight(34)
+        header.addWidget(privacy, 0, Qt.AlignmentFlag.AlignVCenter)
         self.status_badge = QLabel("Klar")
         self.status_badge.setObjectName("StatusBadge")
-        header.addWidget(self.status_badge)
-        layout.addLayout(header)
+        self.status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_badge.setMinimumWidth(116)
+        self.status_badge.setFixedHeight(34)
+        self.status_badge.setAccessibleName("Programstatus")
+        header.addWidget(self.status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(header_panel)
 
         cards = QHBoxLayout()
-        self.row_card = MetricCard("Merged-rader", Palette.navy)
-        self.control_card = MetricCard("Kontrollfeil", Palette.red)
-        self.support_card = MetricCard("FR1-støtte", Palette.green)
+        cards.setSpacing(12)
+        self.row_card = MetricCard("Merged-rader", "Leader + FR1", Palette.navy)
+        self.control_card = MetricCard("Kontrollfeil", "Krever oppfølging", Palette.red)
+        self.support_card = MetricCard("FR1-støtte", "Eksakte overlapp", Palette.green)
         for card in (self.row_card, self.control_card, self.support_card):
             cards.addWidget(card)
         layout.addLayout(cards)
 
+        workflow_label = QLabel("ARBEIDSFLYT")
+        workflow_label.setObjectName("WorkflowLabel")
+        layout.addWidget(workflow_label)
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("WorkflowTabs")
+        self.tabs.setDocumentMode(True)
         self.tabs.addTab(self._run_tab(), "Kjøring")
         self.tabs.addTab(self._controls_tab(), "Kontroller")
         self.tabs.addTab(self._external_tab(), "IMGT og ARResT")
         self.tabs.addTab(self._export_tab(), "Eksport")
         self.tabs.addTab(self._settings_tab(), "Innstillinger")
         layout.addWidget(self.tabs, 1)
+
+        footer = QHBoxLayout()
+        footer_text = QLabel(
+            "IGH Merge  •  råfiler endres aldri  •  ekstern sending krever bekreftelse"
+        )
+        footer_text.setObjectName("FooterText")
+        footer.addWidget(footer_text)
+        footer.addStretch()
+        footer.addWidget(QLabel("Python 3.11+  /  lokal desktop"))
+        layout.addLayout(footer)
         self.setCentralWidget(root)
 
     def _run_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        group = QGroupBox("Kjøringsmappe")
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+        intro = QLabel(
+            "1  KJØRING   Velg mappen som inneholder Leader- og FR1-output. "
+            "Appen leser filene uten å endre rådata."
+        )
+        intro.setObjectName("PageIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        group = QGroupBox("Velg og valider kjøringsmappe")
         grid = QGridLayout(group)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
         self.run_edit = QLineEdit(
             self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGH-data"))
         )
+        self.run_edit.setClearButtonEnabled(True)
+        self.run_edit.setAccessibleName("Kjøringsmappe")
         browse = QPushButton("Velg mappe")
         browse.clicked.connect(self._browse_run)
         self.validate_button = QPushButton("Valider kjøring")
@@ -228,15 +306,16 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Mappe"), 0, 0)
         grid.addWidget(self.run_edit, 0, 1)
         grid.addWidget(browse, 0, 2)
-        grid.addWidget(self.validate_button, 1, 2)
+        grid.addWidget(self.validate_button, 0, 3)
         layout.addWidget(group)
 
         self.file_table = QTableWidget(0, 5)
         self.file_table.setHorizontalHeaderLabels(["S-nr.", "Prøve", "Leader-rader", "FR1-rader", "Status"])
-        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.file_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._configure_table(self.file_table)
+        self.file_table.setAccessibleName("Oppdagede prøvefiler")
         layout.addWidget(self.file_table, 1)
         self.run_message = QLabel("Velg en kjøringsmappe og valider før eksport.")
+        self.run_message.setObjectName("InfoCallout")
         self.run_message.setWordWrap(True)
         layout.addWidget(self.run_message)
         return page
@@ -244,22 +323,34 @@ class MainWindow(QMainWindow):
     def _controls_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+        intro = QLabel(
+            "2  KONTROLLER   Kjøringskontrollene vises separat for Leader og FR1. "
+            "Status må vurderes etter lokal prosedyre."
+        )
+        intro.setObjectName("PageIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
         self.control_table = QTableWidget(0, 4)
         self.control_table.setHorizontalHeaderLabels(["Kontroll", "Target", "Status", "Detaljer"])
-        self.control_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.control_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        layout.addWidget(QLabel("Kontroller"))
+        self._configure_table(self.control_table)
+        self.control_table.setAccessibleName("Kjøringskontroller")
         layout.addWidget(self.control_table, 1)
         return page
 
     def _external_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(12)
 
         information = QLabel(
-            "Velg Leader-sekvenser. Før sending erstattes prøvenummeret med en tilfeldig "
-            "ekstern ID. Kun FASTA-headeren og nukleotidsekvensen sendes."
+            "3  EKSTERN ANALYSE   Velg Leader-sekvenser. Før sending erstattes "
+            "prøvenummeret med en tilfeldig ekstern ID. Kun FASTA-headeren og "
+            "nukleotidsekvensen sendes."
         )
+        information.setObjectName("PrivacyCallout")
         information.setWordWrap(True)
         layout.addWidget(information)
 
@@ -278,15 +369,28 @@ class MainWindow(QMainWindow):
                 "Gruppe / kommentar",
             ]
         )
-        self.candidate_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
+        self._configure_table(self.candidate_table)
+        candidate_header = self.candidate_table.horizontalHeader()
+        candidate_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        candidate_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        candidate_header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
+        candidate_header.setMinimumSectionSize(58)
         self.candidate_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
+        self.candidate_table.setAccessibleName("Leader-kandidater for ekstern analyse")
         layout.addWidget(self.candidate_table, 1)
 
-        actions = QHBoxLayout()
+        action_bar = QFrame()
+        action_bar.setObjectName("ActionBar")
+        action_grid = QGridLayout(action_bar)
+        action_grid.setContentsMargins(12, 10, 12, 10)
+        action_grid.setHorizontalSpacing(8)
+        action_grid.setVerticalSpacing(8)
+        local_label = QLabel("LOKALT")
+        local_label.setObjectName("ActionLabel")
+        external_label = QLabel("EKSTERNT")
+        external_label.setObjectName("ActionLabel")
         self.select_candidates_button = QPushButton("Velg gule Leader-kandidater")
         self.select_candidates_button.clicked.connect(self._select_candidates)
         preview_fasta = QPushButton("Forhåndsvis FASTA")
@@ -304,21 +408,29 @@ class MainWindow(QMainWindow):
         self.report_button = QPushButton("Lag rapportutkast")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
-        for button in (
-            self.select_candidates_button,
-            preview_fasta,
-            export_fasta,
-            self.send_imgt_button,
-            self.send_arrest_button,
-            self.report_button,
-        ):
-            actions.addWidget(button)
-        actions.addStretch()
-        layout.addLayout(actions)
+        action_grid.addWidget(local_label, 0, 0)
+        action_grid.addWidget(self.select_candidates_button, 0, 1)
+        action_grid.addWidget(preview_fasta, 0, 2)
+        action_grid.addWidget(export_fasta, 0, 3)
+        action_grid.addWidget(external_label, 1, 0)
+        action_grid.addWidget(self.send_imgt_button, 1, 1)
+        action_grid.addWidget(self.send_arrest_button, 1, 2)
+        action_grid.addWidget(self.report_button, 1, 3)
+        action_grid.setColumnStretch(4, 1)
+        layout.addWidget(action_bar)
+
+        self.external_progress = QProgressBar()
+        self.external_progress.setRange(0, 0)
+        self.external_progress.setTextVisible(False)
+        self.external_progress.setFixedHeight(4)
+        self.external_progress.setVisible(False)
+        self.external_progress.setAccessibleName("Ekstern analyse pågår")
+        layout.addWidget(self.external_progress)
 
         self.external_status = QLabel(
             "Ingen sekvenser er sendt. Maksimalt 50 sekvenser per batch."
         )
+        self.external_status.setObjectName("StatusCallout")
         self.external_status.setWordWrap(True)
         layout.addWidget(self.external_status)
         return page
@@ -326,9 +438,22 @@ class MainWindow(QMainWindow):
     def _export_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        excel_group = QGroupBox("Merged Excel")
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+        intro = QLabel(
+            "4  EKSPORT   Lag én kompatibel merged-fane med 22 kolonner. "
+            "Eksisterende filer overskrives bare etter bekreftelse."
+        )
+        intro.setObjectName("PageIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        excel_group = QGroupBox("Merged Excel-arbeidsbok")
         grid = QGridLayout(excel_group)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(12)
         self.output_edit = QLineEdit()
+        self.output_edit.setClearButtonEnabled(True)
+        self.output_edit.setAccessibleName("Filnavn for merged Excel")
         output_browse = QPushButton("Velg fil")
         output_browse.clicked.connect(self._browse_output)
         self.export_button = QPushButton("Eksporter merged.xlsx")
@@ -347,26 +472,48 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.highlight_excel_checkbox, 1, 0, 1, 2)
         grid.addWidget(self.export_button, 1, 2)
         layout.addWidget(excel_group)
+        export_note = QLabel(
+            "Excel-filen inneholder én fane, formler og betinget formatering. "
+            "Velg gulmarkering hvis kandidatene også skal være synlige i arbeidsboken."
+        )
+        export_note.setObjectName("InfoCallout")
+        export_note.setWordWrap(True)
+        layout.addWidget(export_note)
         layout.addStretch()
         return page
 
     def _settings_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+        intro = QLabel(
+            "INNSTILLINGER   Lokale standardvalg for denne Windows-brukeren. "
+            "Kliniske kontrollgrenser er versjonerte og skrivebeskyttede."
+        )
+        intro.setObjectName("PageIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
         group = QGroupBox("Lokale innstillinger")
         form = QFormLayout(group)
         self.default_data_edit = QLineEdit(
             self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGH-data"))
         )
+        self.default_data_edit.setClearButtonEnabled(True)
+        self.default_data_edit.setAccessibleName("Standard datamappe")
         self.expected_spin = QSpinBox()
         self.expected_spin.setRange(1, 96)
         self.expected_spin.setValue(int(self.settings.value("expectedSamples", 24)))
         save = QPushButton("Lagre innstillinger")
         save.setObjectName("PrimaryButton")
+        save.setMinimumWidth(210)
         save.clicked.connect(self._save_settings)
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        save_row.addWidget(save)
         form.addRow("Standard datamappe", self.default_data_edit)
         form.addRow("Forventet antall per target", self.expected_spin)
-        form.addRow("", save)
+        form.addRow("", save_row)
         layout.addWidget(group)
 
         rules = QGroupBox("Kontrollgrenser (skrivebeskyttet)")
@@ -382,6 +529,28 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         return page
 
+    def _configure_table(self, table: QTableWidget) -> None:
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setMinimumHeight(38)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(34)
+        table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+
+    def _set_status(self, text: str, tone: str) -> None:
+        self.status_badge.setText(text)
+        self.status_badge.setProperty("tone", tone)
+        self.status_badge.style().unpolish(self.status_badge)
+        self.status_badge.style().polish(self.status_badge)
+
+    def _apply_interaction_cursors(self) -> None:
+        for widget_type in (QPushButton, QCheckBox):
+            for widget in self.findChildren(widget_type):
+                widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tabs.tabBar().setCursor(Qt.CursorShape.PointingHandCursor)
+
     def _browse_run(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Velg IGHV-kjøring", self.run_edit.text())
         if path:
@@ -395,7 +564,9 @@ class MainWindow(QMainWindow):
             self.output_edit.setText(path if path.lower().endswith(".xlsx") else f"{path}.xlsx")
 
     def _validate(self) -> None:
-        self.status_badge.setText("Validerer")
+        self._set_status("Validerer …", "busy")
+        self.validate_button.setEnabled(False)
+        self.validate_button.setText("Validerer …")
         QApplication.processEvents()
         self.external_batch = None
         self.imgt_result = None
@@ -409,11 +580,14 @@ class MainWindow(QMainWindow):
             self.export_button.setEnabled(False)
             self.send_imgt_button.setEnabled(False)
             self.send_arrest_button.setEnabled(False)
-            self.status_badge.setText("Validering feilet")
+            self._set_status("Validering feilet", "error")
             QMessageBox.critical(self, "Validering feilet", str(exc))
             return
+        finally:
+            self.validate_button.setEnabled(True)
+            self.validate_button.setText("Valider kjøring")
         self._populate_result()
-        self.status_badge.setText("Validert")
+        self._set_status("Validert", "success")
         self.export_button.setEnabled(True)
         self.send_imgt_button.setEnabled(True)
         self.send_arrest_button.setEnabled(True)
@@ -622,7 +796,8 @@ class MainWindow(QMainWindow):
         self.external_status.setText(
             f"Sender {len(batch.candidates)} pseudonymiserte sekvenser til {service} …"
         )
-        self.status_badge.setText(f"{service} pågår")
+        self.external_progress.setVisible(True)
+        self._set_status(f"{service} pågår", "busy")
         thread = QThread(self)
         worker = ExternalWorker(service, batch)
         worker.moveToThread(thread)
@@ -693,7 +868,7 @@ class MainWindow(QMainWindow):
             return
         self._refresh_external_table()
         self.external_status.setText(message)
-        self.status_badge.setText(f"{service} fullført")
+        self._set_status(f"{service} fullført", "success")
 
     def _generate_reports(self) -> None:
         if not self.result or not self.external_batch or not self.imgt_result:
@@ -718,10 +893,11 @@ class MainWindow(QMainWindow):
 
     def _external_failed(self, service: str, message: str) -> None:
         self.external_status.setText(f"{service} feilet: {message}")
-        self.status_badge.setText(f"{service} feilet")
+        self._set_status(f"{service} feilet", "error")
         QMessageBox.critical(self, f"{service} feilet", message)
 
     def _external_finished(self) -> None:
+        self.external_progress.setVisible(False)
         self.send_imgt_button.setEnabled(True)
         self.send_arrest_button.setEnabled(True)
         if self._external_worker:
@@ -786,7 +962,7 @@ class MainWindow(QMainWindow):
         except (OSError, PrivacyError, FileExistsError) as exc:
             QMessageBox.critical(self, "Eksport feilet", str(exc))
             return
-        self.status_badge.setText("Eksportert")
+        self._set_status("Eksportert", "success")
         QMessageBox.information(
             self,
             "Eksport fullført",
@@ -845,20 +1021,218 @@ class MainWindow(QMainWindow):
     def _style(self) -> None:
         self.setStyleSheet(
             f"""
-            QMainWindow, QWidget {{ background: {Palette.app_bg}; color: {Palette.ink}; font-family: "Segoe UI"; }}
-            QGroupBox {{ background: {Palette.panel}; border: 1px solid {Palette.border}; border-radius: 6px;
-                         margin-top: 10px; padding: 12px; font-weight: 600; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}
-            QLineEdit, QSpinBox, QTableWidget {{ background: white; border: 1px solid {Palette.border}; }}
-            QPushButton {{ background: white; border: 1px solid {Palette.border}; border-radius: 4px; padding: 7px 12px; }}
-            QPushButton:hover {{ border-color: {Palette.blue}; }}
-            QPushButton#PrimaryButton {{ background: {Palette.navy}; color: white; font-weight: 600; }}
-            QPushButton:disabled {{ color: #8B949C; background: #E9EEF2; }}
-            QFrame#MetricCard {{ background: white; border: 1px solid {Palette.border}; border-radius: 7px; }}
-            QLabel#StatusBadge {{ background: {Palette.navy}; color: white; padding: 7px 12px; border-radius: 12px; }}
-            QHeaderView::section {{ background: {Palette.navy}; color: white; padding: 6px; border: 0; }}
-            QTabWidget::pane {{ border: 1px solid {Palette.border}; background: white; }}
-            QTabBar::tab {{ padding: 8px 16px; background: #E7EDF2; }}
-            QTabBar::tab:selected {{ background: white; color: {Palette.navy}; font-weight: 600; }}
+            QMainWindow {{ background: {Palette.app_bg}; }}
+            QWidget {{
+                color: {Palette.ink};
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }}
+            QWidget#AppRoot {{ background: {Palette.app_bg}; }}
+
+            QFrame#AppHeader {{
+                background: {Palette.panel};
+                border: 1px solid {Palette.border};
+                border-radius: 12px;
+            }}
+            QLabel#BrandIcon {{
+                background: {Palette.pale_blue};
+                border: 1px solid #BFDBFE;
+                border-radius: 10px;
+            }}
+            QLabel#Eyebrow, QLabel#WorkflowLabel, QLabel#MetricLabel,
+            QLabel#ActionLabel {{
+                color: {Palette.muted};
+                font-size: 8pt;
+                font-weight: 700;
+            }}
+            QLabel#AppTitle {{
+                color: {Palette.navy};
+                font-family: "Segoe UI";
+                font-size: 22pt;
+                font-weight: 700;
+            }}
+            QLabel#AppSubtitle, QLabel#MetricDescription, QLabel#FooterText {{
+                color: {Palette.muted};
+            }}
+            QLabel#PrivacyBadge {{
+                background: {Palette.pale_green};
+                color: {Palette.green};
+                border: 1px solid #BBF7D0;
+                border-radius: 10px;
+                padding: 7px 10px;
+                font-size: 8pt;
+                font-weight: 700;
+            }}
+            QLabel#StatusBadge {{
+                background: {Palette.subtle};
+                color: {Palette.navy};
+                border: 1px solid {Palette.border};
+                border-radius: 11px;
+                padding: 7px 11px;
+                font-weight: 700;
+            }}
+            QLabel#StatusBadge[tone="busy"] {{
+                background: {Palette.pale_blue}; color: {Palette.blue}; border-color: #BFDBFE;
+            }}
+            QLabel#StatusBadge[tone="success"] {{
+                background: {Palette.pale_green}; color: {Palette.green}; border-color: #BBF7D0;
+            }}
+            QLabel#StatusBadge[tone="error"] {{
+                background: {Palette.pale_red}; color: {Palette.red}; border-color: #FECACA;
+            }}
+
+            QFrame#MetricCard {{
+                background: {Palette.panel};
+                border: 1px solid {Palette.border};
+                border-radius: 10px;
+            }}
+
+            QLabel#PageIntro, QLabel#InfoCallout, QLabel#PrivacyCallout,
+            QLabel#StatusCallout {{
+                border-radius: 8px;
+                padding: 11px 13px;
+            }}
+            QLabel#PageIntro {{
+                background: {Palette.pale_blue};
+                color: {Palette.navy};
+                border: 1px solid #BFDBFE;
+                font-weight: 600;
+            }}
+            QLabel#InfoCallout, QLabel#StatusCallout {{
+                background: {Palette.subtle};
+                color: {Palette.muted};
+                border: 1px solid {Palette.border};
+            }}
+            QLabel#PrivacyCallout {{
+                background: {Palette.pale_green};
+                color: #166534;
+                border: 1px solid #BBF7D0;
+                font-weight: 600;
+            }}
+
+            QGroupBox {{
+                background: {Palette.panel};
+                border: 1px solid {Palette.border};
+                border-radius: 10px;
+                margin-top: 12px;
+                padding: 16px 14px 14px 14px;
+                font-weight: 700;
+                color: {Palette.navy};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px;
+                background: {Palette.panel};
+            }}
+            QFrame#ActionBar {{
+                background: {Palette.subtle};
+                border: 1px solid {Palette.border};
+                border-radius: 9px;
+            }}
+
+            QLineEdit, QSpinBox, QPlainTextEdit {{
+                background: {Palette.panel};
+                color: {Palette.ink};
+                border: 1px solid {Palette.border};
+                border-radius: 7px;
+                padding: 8px 10px;
+                selection-background-color: {Palette.blue};
+                min-height: 20px;
+            }}
+            QLineEdit:hover, QSpinBox:hover, QPlainTextEdit:hover {{ border-color: #94A3B8; }}
+            QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus {{
+                border: 2px solid {Palette.blue};
+                padding: 7px 9px;
+            }}
+
+            QPushButton {{
+                background: {Palette.panel};
+                color: {Palette.navy};
+                border: 1px solid {Palette.border};
+                border-radius: 7px;
+                padding: 8px 13px;
+                min-height: 20px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ background: {Palette.pale_blue}; border-color: #93C5FD; color: {Palette.blue_hover}; }}
+            QPushButton:pressed {{ background: #DBEAFE; border-color: {Palette.blue}; }}
+            QPushButton:focus {{ border: 2px solid {Palette.blue}; padding: 7px 12px; }}
+            QPushButton#PrimaryButton {{
+                background: {Palette.blue};
+                color: white;
+                border-color: {Palette.blue};
+                font-weight: 700;
+            }}
+            QPushButton#PrimaryButton:hover {{ background: {Palette.blue_hover}; border-color: {Palette.blue_hover}; color: white; }}
+            QPushButton#PrimaryButton:pressed {{ background: {Palette.navy}; }}
+            QPushButton:disabled {{
+                color: #94A3B8;
+                background: #E2E8F0;
+                border-color: #E2E8F0;
+            }}
+
+            QCheckBox {{ color: {Palette.ink}; spacing: 8px; padding: 4px 0; }}
+            QCheckBox::indicator {{ width: 18px; height: 18px; }}
+            QCheckBox::indicator:unchecked {{
+                background: white; border: 1px solid #94A3B8; border-radius: 4px;
+            }}
+            QCheckBox::indicator:checked {{
+                background: {Palette.blue}; border: 1px solid {Palette.blue}; border-radius: 4px;
+            }}
+
+            QTableWidget {{
+                background: {Palette.panel};
+                alternate-background-color: {Palette.app_bg};
+                border: 1px solid {Palette.border};
+                border-radius: 8px;
+                gridline-color: transparent;
+                selection-background-color: #DBEAFE;
+                selection-color: {Palette.ink};
+            }}
+            QTableWidget:focus {{ border: 2px solid {Palette.blue}; }}
+            QHeaderView::section {{
+                background: {Palette.navy};
+                color: white;
+                padding: 8px 7px;
+                border: 0;
+                border-right: 1px solid #345575;
+                font-weight: 700;
+            }}
+            QTableCornerButton::section {{ background: {Palette.navy}; border: 0; }}
+
+            QTabWidget::pane {{
+                border: 1px solid {Palette.border};
+                border-radius: 0 8px 8px 8px;
+                background: {Palette.panel};
+            }}
+            QTabBar {{ background: {Palette.app_bg}; }}
+            QTabBar::tab {{
+                min-width: 128px;
+                padding: 10px 16px;
+                margin-right: 4px;
+                background: #E2E8F0;
+                color: {Palette.muted};
+                border: 1px solid {Palette.border};
+                border-bottom: 0;
+                border-top-left-radius: 7px;
+                border-top-right-radius: 7px;
+                font-weight: 600;
+            }}
+            QTabBar::tab:hover {{ background: {Palette.pale_blue}; color: {Palette.blue}; }}
+            QTabBar::tab:selected {{
+                background: {Palette.panel};
+                color: {Palette.navy};
+                border-top: 3px solid {Palette.blue};
+                padding-top: 8px;
+                font-weight: 700;
+            }}
+            QTabBar::tab:focus {{ border: 2px solid {Palette.blue}; }}
+
+            QProgressBar {{ background: #DBEAFE; border: 0; border-radius: 2px; }}
+            QProgressBar::chunk {{ background: {Palette.blue}; border-radius: 2px; }}
+            QToolTip {{
+                background: {Palette.navy}; color: white; border: 0; padding: 6px;
+            }}
             """
         )

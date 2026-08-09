@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QDialog
 from PyQt6.QtCore import Qt
 
-from igh_merge.gui import MainWindow, PayloadDialog
+from igh_merge.gui import APP_ICON_PATH, MainWindow, PayloadDialog, application_icon
 from igh_merge.service import MergeService
 
 from conftest import write_summary
@@ -31,6 +31,14 @@ def test_gui_has_required_norwegian_tabs():
         "Marker appens gule kandidatrader i Excel"
     )
     assert window.highlight_excel_checkbox.isChecked() is False
+    assert APP_ICON_PATH.is_file()
+    assert application_icon().isNull() is False
+    assert window.windowIcon().isNull() is False
+    assert window.minimumWidth() == 1040
+    assert window.status_badge.property("tone") == "neutral"
+    assert window.status_badge.accessibleName() == "Programstatus"
+    assert window.external_progress.isHidden() is True
+    assert window.external_progress.accessibleName() == "Ekstern analyse pågår"
     window.close()
     assert app is not None
 
