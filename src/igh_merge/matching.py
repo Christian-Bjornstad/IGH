@@ -9,7 +9,7 @@ CLONE_THRESHOLD = 2.5
 
 
 def annotate_exact_matches(rows: list[MergedRow]) -> None:
-    """Annoter kryssprøvetreff, relevant FR1-støtte og Leader-varianter."""
+    """Annotate cross-sample hits, relevant FR1 support, and Leader variants."""
     by_sequence: dict[str, list[MergedRow]] = defaultdict(list)
     by_sample: dict[str, list[MergedRow]] = defaultdict(list)
     for row in rows:
@@ -45,8 +45,8 @@ def annotate_exact_matches(rows: list[MergedRow]) -> None:
                         tentative.append(label)
                 comments: list[str] = []
                 if confident:
-                    comments.append("Støtter " + " og ".join(confident))
-                comments.extend(f"(Støtter {label})" for label in tentative)
+                    comments.append("Supports " + " and ".join(confident))
+                comments.extend(f"(Supports {label})" for label in tentative)
                 fr1.comment = "; ".join(comments)
 
         _annotate_leader_variants(leaders, fr1_rows)
@@ -92,7 +92,7 @@ def _annotate_leader_variants(
         if parent is None:
             group_leaders.append(candidate)
             continue
-        candidate.comment = f"Variant av Leader-{parent.source.rank}"
+        candidate.comment = f"Variant of Leader-{parent.source.rank}"
 
 
 def _relevant_exact_leaders(

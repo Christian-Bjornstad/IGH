@@ -29,7 +29,7 @@ def generate_clinical_report_package(
     imgt: ImgtBatchResult,
     arrest: ArrestBatchResult | None = None,
 ) -> Path:
-    output = run_directory.resolve() / f"{batch.run_date}_rapporter" / batch.session_id
+    output = run_directory.resolve() / f"{batch.run_date}_reports" / batch.session_id
     ensure_outside_git(output)
     output.mkdir(parents=True, exist_ok=True)
     candidates = batch.by_id()
@@ -42,7 +42,7 @@ def generate_clinical_report_package(
     generated = []
     for sample, external_ids in by_sample.items():
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", sample)
-        path = output / f"{name}_IGHV_rapportutkast.pdf"
+        path = output / f"{name}_IGHV_report_draft.pdf"
         _write_sample_report(
             path, sample, external_ids, rows, candidates, imgt_records,
             arrest_records,
@@ -50,7 +50,7 @@ def generate_clinical_report_package(
         generated.append(path.name)
     audit = {
         "schema_version": 1,
-        "status": "UTKAST - krever faglig godkjenning",
+        "status": "DRAFT - requires specialist approval",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_date": batch.run_date,
         "session_id": batch.session_id,
@@ -60,7 +60,7 @@ def generate_clinical_report_package(
         "imgt_records": [asdict(item) for item in imgt.records],
         "arrest_records": [asdict(item) for item in arrest.records] if arrest else [],
     }
-    (output / "rapportdata.audit.json").write_text(
+    (output / "report_data.audit.json").write_text(
         json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return output
@@ -75,12 +75,12 @@ def _write_sample_report(
         topMargin=16 * mm, bottomMargin=16 * mm,
     )
     story = [
-        Paragraph("IGHV-SHM rapportutkast", styles["Title"]),
-        Paragraph(f"<b>Prøve:</b> {sample}", styles["BodyText"]),
-        Paragraph("<b>ANALYSE:</b> LymphoTrack IGH SHM (HTS)", styles["BodyText"]),
+        Paragraph("IGHV-SHM report draft", styles["Title"]),
+        Paragraph(f"<b>Sample:</b> {sample}", styles["BodyText"]),
+        Paragraph("<b>ANALYSIS:</b> LymphoTrack IGH SHM (HTS)", styles["BodyText"]),
         Paragraph(
-            "<b>Analyseverktøy:</b> LymphoTrack, IMGT/V-QUEST"
-            + (" og ARResT/AssignSubsets" if arrest_records else ""),
+            "<b>Analysis tools:</b> LymphoTrack, IMGT/V-QUEST"
+            + (" and ARResT/AssignSubsets" if arrest_records else ""),
             styles["BodyText"],
         ),
     ]
@@ -91,7 +91,7 @@ def _write_sample_report(
     }
     story.append(
         Paragraph(
-            f"<b>Dybde:</b> {depths['Leader'] or '-'} reads (Leader), "
+            f"<b>Depth:</b> {depths['Leader'] or '-'} reads (Leader), "
             f"{depths['FR1'] or '-'} reads (FR1)", styles["BodyText"]
         )
     )
@@ -108,29 +108,29 @@ def _write_sample_report(
         ]
         identity = (
             f"{record.v_identity_percent:.1f} %" if record.v_identity_percent is not None
-            else "ikke beregnet"
+            else "not calculated"
         )
         counts = (
             f"{record.v_identity_numerator}/{record.v_identity_denominator} nt"
-            if record.v_identity_numerator is not None else "ikke tilgjengelig"
+            if record.v_identity_numerator is not None else "not available"
         )
         functionality = (
-            "Funksjonell (productive)" if record.productive is True
-            else "Ufunksjonell (unproductive)" if record.productive is False
-            else record.functionality or "Ikke entydig bestemt"
+            "Functional (productive)" if record.productive is True
+            else "Non-functional (unproductive)" if record.productive is False
+            else record.functionality or "Not conclusively determined"
         )
-        subset = (arrest.subset if arrest else "") or record.cll_subset or "Ikke påvist"
+        subset = (arrest.subset if arrest else "") or record.cll_subset or "Not detected"
         data = [
-            ["Leader-andel", f"{local.source.percent_total_reads:.2f} %"],
-            ["FR1-støtte", ", ".join(f"{value:.2f} %" for value in fr1_support) or "Ikke påvist"],
+            ["Leader fraction", f"{local.source.percent_total_reads:.2f} %"],
+            ["FR1 support", ", ".join(f"{value:.2f} %" for value in fr1_support) or "Not detected"],
             ["IGHV / IGHD / IGHJ", " / ".join(
                 [_gene(record.v_call), _gene(record.d_call) or "-", _gene(record.j_call)]
             )],
-            ["VH-identitet", f"{identity} ({counts})"],
-            ["Funksjonalitet", functionality],
+            ["VH identity", f"{identity} ({counts})"],
+            ["Functionality", functionality],
             ["CDR3 (AA)", record.cdr3_aa or record.junction_aa or "-"],
-            ["CDR3-lengde", str(record.cdr3_aa_length or record.junction_aa_length or "-")],
-            ["Insersjon/delesjon", "; ".join(filter(None, [record.insertions, record.deletions])) or "Ikke påvist"],
+            ["CDR3 length", str(record.cdr3_aa_length or record.junction_aa_length or "-")],
+            ["Insertion/deletion", "; ".join(filter(None, [record.insertions, record.deletions])) or "Not detected"],
             ["Subset", subset],
         ]
         table = Table(data, colWidths=[48 * mm, 112 * mm])

@@ -1,145 +1,147 @@
-# Plan for IMGT- og ARResT-fasen
+# Plan for IMGT and ARResT Phase
 
-Status: grunnmur og første integrasjon implementert. Ekstern sending skjer kun
-etter payload-forhåndsvisning og eksplisitt bekreftelse.
+Status: foundation and first integration implemented. External sending only
+occurs after payload preview and explicit confirmation.
 
-## Mål
+## Goals
 
-- Analysere manuelt valgte Leader-rearrangeringer i IMGT/V-QUEST.
-- Hente produktivitetsindikatorer, V/D/J-kall, identitet og verktøyversjon fra
-  IMGT uten å overskrive LymphoTrack-resultater.
-- Tilordne CLL-subset med tydelig kilde. IMGT kan identifisere subset 2 og 8,
-  mens ARResT/AssignSubsets dekker 19 hovedsubsets.
-- Beholde dagens kompatible merged-ark med 22 kolonner.
-- Ikke innføre automatisk klinisk review eller beslutningsstøtte.
+- Analyze manually selected Leader rearrangements in IMGT/V-QUEST.
+- Retrieve productivity indicators, V/D/J calls, identity, and tool version
+  from IMGT without overwriting LymphoTrack results.
+- Assign CLL subset with clear source. IMGT can identify subsets 2 and 8,
+  while ARResT/AssignSubsets covers 19 major subsets.
+- Maintain the compatible merged sheet with 22 columns.
+- Do not introduce automatic clinical review or decision support.
 
-## Låst regel for ekstern sending
+## Locked Rule for External Sending
 
-1. Appen sender bare valgte nukleotidsekvenser i FASTA-format med tilfeldige
-   eksterne ID-er. Den sender aldri Sample-navn, pasient-ID, filnavn,
-   kjøringsdato, lokale stier eller rå FASTQ-data.
-2. Brukeren får se den komplette payloaden før sending og må starte hver
-   sending eksplisitt. Det finnes ingen bakgrunnssending.
-3. IMGT bør kontaktes om automatisert bruk av verktøyet i tråd med vilkårene.
-   Vilkårene
-   opplyser at vitenskapelige input- og outputdata normalt lagres på
-   IMGT-servere i fire til seks måneder.
-4. Retensjon, behandlingssted og vilkår for ARResT dokumenteres i lokal
-   prosedyre. Appen viser tjenesten som mottaker før sending.
-5. Automatisk retry kan bare skje mens dialogen er åpen og må bruke nøyaktig
-   samme pseudonyme payload.
+1. The app sends only selected nucleotide sequences in FASTA format with
+   random external IDs. It never sends sample names, patient IDs, filenames,
+   run dates, local paths, or raw FASTQ data.
+2. The user sees the complete payload before sending and must explicitly
+   initiate each send. There is no background sending.
+3. IMGT should be contacted regarding automated use of the tool per their
+   terms. The terms state that scientific input and output data are normally
+   stored on IMGT servers for four to six months.
+4. Retention, processing location, and terms for ARResT are documented in
+   local procedure. The app shows the service as recipient before sending.
+5. Automatic retry can only occur while the dialog is open and must use
+   exactly the same pseudonymous payload.
 
-## Datamodell og lokal lagring
+## Data Model and Local Storage
 
-For hver valgt rearrangering lagres følgende lokalt i kjøringsmappen:
+For each selected rearrangement, the following is stored locally in the
+run folder:
 
-- tilfeldig ekstern ID og kobling til Sample/Target/Rank;
-- SHA-256 av sekvensen for sikker resultatkobling;
-- tjeneste, analysetidspunkt, parametere, verktøyversjon og
-  referansedatabase-release;
-- rå resultatfil uendret;
-- normaliserte IMGT-felt: productive, stop_codon, vj_in_frame, V/D/J-kall,
-  V-identitet, junction/CDR3 og eventuelle indelfunn;
-- normaliserte ARResT-felt: subset, confidence, score og SeqCure-status.
+- Random external ID and linkage to Sample/Target/Rank;
+- SHA-256 of the sequence for secure result linkage;
+- Service, analysis time, parameters, tool version, and
+  reference database release;
+- Raw result file unchanged;
+- Normalized IMGT fields: productive, stop_codon, vj_in_frame, V/D/J calls,
+  V identity, junction/CDR3, and any indel findings;
+- Normalized ARResT fields: subset, confidence, score, and SeqCure status.
 
-Koblingsfilen og råresultatene er kliniske data, lagres utenfor Git og tas
-aldri med i applikasjonslogger. LymphoTrack-feltene og `Identitet til VH`
-overskrives ikke av IMGT.
+The linkage file and raw results are clinical data, stored outside Git and
+never included in application logs. LymphoTrack fields and `Identity to VH`
+are not overwritten by IMGT.
 
-## Fase 1 – felles sende- og resultatgrunnlag (implementert)
+## Phase 1 – Common Send and Result Foundation (implemented)
 
-1. Legg til fanen **IMGT og ARResT**.
-2. La brukeren velge Leader-rader og opprette batcher på maksimalt 50
-   fullstendige nukleotidsekvenser.
-3. Bygg en pseudonymisert FASTA-payload og en lokal koblingsfil. Rå FASTQ
-   sendes ikke.
-4. Vis de låste IMGT-innstillingene:
+1. Add the **IMGT & ARResT** tab.
+2. Let the user select Leader rows and create batches of up to 50
+   complete nucleotide sequences.
+3. Build a pseudonymized FASTA payload and a local linkage file. Raw FASTQ
+   is not sent.
+4. Show the locked IMGT settings:
    - Species: Homo sapiens
    - Receptor type or locus: IGH
-   - AIRR-formatert resultat
-   - Alignment for D-GENE: på
-   - Search for insertions and deletions in V-REGION: på
-   - Clinical application, CLL subsets 2 and 8: på
-5. Vis en payload-forhåndsvisning og mottakerdomene før aktiv sending.
-6. Send til IMGT og importer `Parameters.txt` og `vquest_airr.tsv`.
-7. Send samme pseudonyme FASTA til ARResT og importer
-   plain-text-resultattabellen.
-8. Valider unike eksterne ID-er, manglende/ekstra rader, sekvenshash og
-   nødvendige kolonner før resultatene kan knyttes tilbake.
+   - AIRR-formatted result
+   - Alignment for D-GENE: on
+   - Search for insertions and deletions in V-REGION: on
+   - Clinical application, CLL subsets 2 and 8: on
+5. Show payload preview and recipient domains before active sending.
+6. Send to IMGT and import `Parameters.txt` and `vquest_airr.tsv`.
+7. Send the same pseudonymous FASTA to ARResT and import
+   the plain-text result table.
+8. Validate unique external IDs, missing/extra rows, sequence hash, and
+   required columns before results can be linked back.
 
-## Fase 2 – IMGT-adapter (implementert)
+## Phase 2 – IMGT Adapter (implemented)
 
-IMGT bygges som en isolert adapter med følgende kontrakt:
+IMGT is built as an isolated adapter with the following contract:
 
-- input er kun pseudonym ID og sekvens;
-- batchstørrelse maksimalt 50;
-- faste, versjonerte parametere fra fase 1;
-- output er `Parameters.txt` og `vquest_airr.tsv`;
-- timeout, avbrudd og delvis resultat gir status, ikke automatisk
-  klassifikasjon;
-- responsens programversjon, referanserelease og parametere må være til stede;
-- endret skjema eller ukjent versjon stopper importen kontrollert.
+- Input is only pseudonym ID and sequence;
+- Batch size maximum 50;
+- Fixed, versioned parameters from phase 1;
+- Output is `Parameters.txt` and `vquest_airr.tsv`;
+- Timeout, abort, and partial result give status, not automatic
+  classification;
+- Response's program version, reference release, and parameters must be present;
+  - Changed schema or unknown version stops import in a controlled manner.
 
-`ShawHahnLab/vquest` kan brukes som referanse eller isolert avhengighet etter
-lisensvurdering. Pakken automatiserer webskjemaet, er AGPL-3.0, støtter bare
-AIRR-resultater og har siste publiserte release fra 2022. Den skal derfor ikke
-kobles direkte inn uten en kontrakttest mot gjeldende IMGT/V-QUEST.
+`ShawHahnLab/vquest` can be used as reference or isolated dependency after
+license assessment. The package automates the web form, is AGPL-3.0, supports
+only AIRR results, and has the latest published release from 2022. It should
+therefore not be linked directly without a contract test against the current
+IMGT/V-QUEST.
 
-## Fase 3 – ARResT (implementert)
+## Phase 3 – ARResT (implemented)
 
-ARResT bygges som en separat adapter:
+ARResT is built as a separate adapter:
 
-- maksimalt 50 fullstendige IG-nukleotidsekvenser og omtrent 100 kB;
-- parser for label, SeqCure, subset, confidence og score;
-- `unassigned` og `skipped/unhealthy` behandles som resultatverdier;
-- borderline/low lagres uendret uten at appen tolker dem;
-- adapteren må ta høyde for at ARResT selv bruker IMGT/V-QUEST.
+- Maximum 50 complete IG nucleotide sequences and approximately 100 kB;
+- Parser for label, SeqCure, subset, confidence, and score;
+- `unassigned` and `skipped/unhealthy` are treated as result values;
+- Borderline/low is stored unchanged without the app interpreting them;
+- The adapter must account for ARResT itself using IMGT/V-QUEST.
 
-IMGT-resultat for subset 2/8 og ARResT-resultat lagres hver for seg. Ved
-uenighet vises begge kildene; appen velger ikke automatisk en vinner.
+IMGT result for subset 2/8 and ARResT result are stored separately. In case
+of disagreement, both sources are shown; the app does not automatically pick
+a winner.
 
-## GUI og merged-output
+## GUI and Merged Output
 
-Fanen **IMGT og ARResT** skal vise:
+The **IMGT & ARResT** tab shall show:
 
-- valgte rader og pseudonyme eksterne ID-er;
-- status: ikke eksportert, eksportert, importert eller importfeil;
-- IMGT-felter og ARResT-felter side om side;
-- versjon, referanserelease, tidspunkt og parametere;
-- knapper for lokal eksport og import;
-- sendeknapper med payload-forhåndsvisning og tydelig mottaker.
+- Selected rows and pseudonymous external IDs;
+- Status: not exported, exported, imported, or import error;
+- IMGT fields and ARResT fields side by side;
+- Version, reference release, timestamp, and parameters;
+- Buttons for local export and import;
+- Send buttons with payload preview and clear recipient.
 
-I merged-filen beholdes kolonnene:
+In the merged file, the columns are retained:
 
-- `Subset`: bekreftet subset-verdi;
-- `Kommentar`: kort kildeangivelse, for eksempel
+- `Subset`: confirmed subset value;
+- `Comment`: short source attribution, for example
   `IMGT 3.8.2: productive; ARResT: subset 2, high`.
 
-Fullstendige eksterne resultater lagres i en separat lokal sidecarfil, slik at
-merged-arket forblir kompatibelt og sporbarheten ikke komprimeres bort.
+Complete external results are stored in a separate local sidecar file, so
+the merged sheet remains compatible and traceability is not compressed away.
 
-## Tester og akseptanse
+## Tests and Acceptance
 
-- Alle automatiske tester bruker publiserte eksempeldata eller konstruerte
-  sekvenser.
-- Parsere testes mot lagrede, anonymiserte fixtures for gyldig resultat,
-  manglende rad, duplikat, endret header, delvis batch og ukjent versjon.
-- Ingen nettverk brukes i enhetstester.
-- Kontrakttest kjøres manuelt med offentlige IMGT/ARResT-eksempler før hver
-  godkjent release.
-- Test skal bevise at eksternt payload ikke inneholder interne prøve-ID-er.
-- Test skal bevise at resultat fra feil sekvens eller feil kjøring ikke kan
-  importeres.
-- Merged-eksport skal beholde 22 kolonner, formler og formatering.
-- En klinisk pilot sammenlignes med manuell arbeidsflyt og signeres av
-  fagansvarlig før funksjonen tas i rutinebruk.
+- All automated tests use published example data or constructed
+  sequences.
+- Parsers are tested against stored, anonymized fixtures for valid result,
+  missing row, duplicate, changed header, partial batch, and unknown version.
+- No network is used in unit tests.
+- Contract test is run manually with public IMGT/ARResT examples before each
+  approved release.
+- Test shall prove that external payload does not contain internal sample IDs.
+- Test shall prove that results from wrong sequence or wrong run cannot
+  be imported.
+- Merged export shall retain 22 columns, formulas, and formatting.
+- A clinical pilot is compared with manual workflow and signed by
+  responsible specialist before the function enters routine use.
 
-## Foreslått leveranserekkefølge
+## Proposed Delivery Sequence
 
-1. Datamodell, pseudonyme ID-er og sidecarformat. Ferdig.
-2. Fane, payload-forhåndsvisning og IMGT AIRR-parser. Ferdig.
-3. ARResT-parser og kildebevisst subsetvisning. Ferdig.
-4. Kontrakttest med offentlig sekvens mot IMGT 3.8.2 og ARResT. Ferdig.
-5. Lokal validering mot historiske, ikke-versjonerte kliniske resultater.
-6. Vilkårs- og faglig dokumentasjon.
-7. Klinisk pilot og signering før rutinebruk.
+1. Data model, pseudonymous IDs, and sidecar format. Done.
+2. Tab, payload preview, and IMGT AIRR parser. Done.
+3. ARResT parser and source-aware subset display. Done.
+4. Contract test with public sequence against IMGT 3.8.2 and ARResT. Done.
+5. Local validation against historical, non-versioned clinical results.
+6. Terms and professional documentation.
+7. Clinical pilot and sign-off before routine use.

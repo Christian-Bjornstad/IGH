@@ -128,8 +128,8 @@ class ExcelReportWriter:
                 if result_index in highlight_rows:
                     cell.fill = yellow_fill
             row[14].font = Font(name="Calibri", size=11, bold=True, color="000000")
-            # Behold kompakte rader som i referansefilen. FASTA-innholdet kan
-            # leses i formellinjen uten at hele sekvensen blåser opp radhøyden.
+            # Keep compact rows as in reference file. FASTA content can
+            # be read in formula bar without entire sequence blowing up row height.
             row[21].alignment = Alignment(vertical="center", wrap_text=False)
 
         for column in ("G", "H", "I", "L", "N"):

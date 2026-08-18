@@ -1,39 +1,40 @@
-# Kontrollregler i V1
+# Control Rules in V1
 
-Bare kjøringens kontroller evalueres automatisk. Pasientprøver vurderes
-manuelt uten review-varsler fra appen.
+Only the run controls are evaluated automatically. Patient samples are
+assessed manually without review alerts from the app.
 
-Kildegrunnlag gjennomgått lokalt 2026-07-30:
+Source basis reviewed locally 2026-07-30:
 
-- `HTS - IGHV-SHM (KLL)`, dokument-ID 134367
-- `KLL - IGHV mutasjon - Bakgrunn og tolkning`, dokument-ID 38899, versjon 5
+- `HTS - IGHV-SHM (KLL)`, document ID 134367
+- `KLL - IGHV mutation - Background and interpretation`, document ID 38899, version 5
 
-## Kontroller
+## Controls
 
-| Filnavn | Betydning | Regel |
+| Filename | Meaning | Rule |
 |---|---|---|
-| `IGH_POS` | IGH-PK | Toppsekvens minst 2,5 % |
-| `IGH_SHM_POS` | IGH-SHM | Toppsekvens minst 2,5 % og mutasjonsrate minst 2,0 % |
-| `NGS_NEG` | Negativ kontroll | Toppsekvens under 1,0 % |
-| `NK` | NTC | Totalt antall reads under 10 000 |
+| `IGH_POS` | IGH-PK | Top sequence at least 2.5 % |
+| `IGH_SHM_POS` | IGH-SHM | Top sequence at least 2.5 % and mutation rate at least 2.0 % |
+| `NGS_NEG` | Negative control | Top sequence below 1.0 % |
+| `NK` | NTC | Total reads below 10,000 |
 
-Leader og FR1 evalueres separat. Manglende eller ikke bestått kontroll vises
-som kontrollfeil. Prøve-review, unntak, biklonalitet, borderline-resultater
-og endelig funksjonalitet håndteres manuelt.
+Leader and FR1 are evaluated separately. Missing or failed controls are
+shown as control errors. Sample review, exceptions, biclonality, borderline
+results, and final functionality are handled manually.
 
-## Operasjonell klongruppering
+## Operational Clone Grouping
 
-Appen lager en foreløpig, lokal gruppering for å begrense hvilke
-Leader-sekvenser som sendes til IMGT og ARResT:
+The app creates a preliminary, local grouping to limit which
+Leader sequences are sent to IMGT and ARResT:
 
-- Bare rader med `In-frame=Y` og `No Stop codon=Y` kan inngå.
-- Leader minst 2,5 % tas med.
-- Leader under 2,5 % tas med når en FR1 minst 2,5 % overlapper Leader
-  eksakt. FR1-kommentaren settes da i parentes.
-- Når samme FR1 overlapper både en Leader over og under 2,5 %, prioriteres
-  Leader-raden over terskelen.
-- En valgt Leader merkes `Variant av Leader-n` når den har samme V- og
-  J-genfamilie, samme lengde, høyst 10 % nukleotidavvik i hele sekvensen og,
-  når CDR3 finnes, høyst 15 % avvik i CDR3.
+- Only rows with `In-frame=Y` and `No Stop codon=Y` may be included.
+- Leader at least 2.5 % is included.
+- Leader below 2.5 % is included when an FR1 of at least 2.5 % overlaps
+  the Leader exactly. The FR1 comment is then set in parentheses.
+- When the same FR1 overlaps both a Leader above and below 2.5 %, the
+  Leader row above the threshold is prioritized.
+- A selected Leader is marked `Variant of Leader-n` when it has the same
+  V- and J-gene family, same length, at most 10 % nucleotide deviation
+  in the whole sequence, and, when CDR3 is found, at most 15 % deviation
+  in CDR3.
 
-Dette er gruppering og utvalg, ikke automatisk klinisk klassifikasjon.
+This is grouping and selection, not automatic clinical classification.

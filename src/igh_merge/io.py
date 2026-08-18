@@ -31,7 +31,7 @@ DATE_RE = re.compile(r"(?P<date>\d{4}_\d{2}_\d{2})")
 
 
 class ValidationError(ValueError):
-    """Inputdataene kan ikke behandles sikkert."""
+    """Input data cannot be processed safely."""
 
 
 def parse_number(value: str, *, allow_blank: bool = False) -> float | None:
@@ -39,7 +39,7 @@ def parse_number(value: str, *, allow_blank: bool = False) -> float | None:
     if not text:
         if allow_blank:
             return None
-        raise ValidationError("Tom numerisk verdi")
+        raise ValidationError("Empty numeric value")
     if "," in text and "." in text:
         if text.rfind(",") > text.rfind("."):
             text = text.replace(".", "").replace(",", ".")
@@ -50,13 +50,13 @@ def parse_number(value: str, *, allow_blank: bool = False) -> float | None:
     try:
         return float(text)
     except ValueError as exc:
-        raise ValidationError(f"Ugyldig numerisk verdi: {value!r}") from exc
+        raise ValidationError(f"Invalid numeric value: {value!r}") from exc
 
 
 def parse_integer(value: str) -> int:
     number = parse_number(value)
     if number is None or not float(number).is_integer():
-        raise ValidationError(f"Forventet heltall, fikk {value!r}")
+        raise ValidationError(f"Expected integer, got {value!r}")
     return int(number)
 
 
@@ -64,7 +64,7 @@ class SummaryReader:
     def read(self, path: Path, target: Target) -> SampleFile:
         match = SAMPLE_RE.match(path.name)
         if not match:
-            raise ValidationError(f"Kan ikke tolke prøvenavn/S-nummer fra {path.name}")
+            raise ValidationError(f"Cannot parse sample name/S-number from {path.name}")
 
         try:
             with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -74,14 +74,14 @@ class SummaryReader:
                 records = list(csv.reader(handle, delimiter="\t"))
 
         if not records:
-            raise ValidationError(f"Tom fil: {path.name}")
+            raise ValidationError(f"Empty file: {path.name}")
         header = records[0]
         if len(header) != 16:
-            raise ValidationError(f"{path.name}: forventet 16 felt, fant {len(header)}")
+            raise ValidationError(f"{path.name}: expected 16 fields, found {len(header)}")
         if tuple(cell.strip() for cell in header[3:]) != SOURCE_HEADERS:
-            raise ValidationError(f"{path.name}: ukjent eller endret header")
+            raise ValidationError(f"{path.name}: unknown or changed header")
         if header[1].strip().lower() != "total count":
-            raise ValidationError(f"{path.name}: mangler Total count")
+            raise ValidationError(f"{path.name}: missing Total count")
 
         total_reads = parse_integer(header[2])
         rows: list[SourceRow] = []
@@ -91,15 +91,15 @@ class SummaryReader:
                 continue
             if len(record) != 16:
                 raise ValidationError(
-                    f"{path.name}, linje {line_number}: forventet 16 felt, fant {len(record)}"
+                    f"{path.name}, line {line_number}: expected 16 fields, found {len(record)}"
                 )
             rank = parse_integer(record[3])
             if rank in seen_ranks:
-                raise ValidationError(f"{path.name}: duplikat rang {rank}")
+                raise ValidationError(f"{path.name}: duplicate rank {rank}")
             seen_ranks.add(rank)
             sequence = record[4].strip().upper()
             if not sequence or not re.fullmatch(r"[ACGTN]+", sequence):
-                raise ValidationError(f"{path.name}, rang {rank}: ugyldig DNA-sekvens")
+                raise ValidationError(f"{path.name}, rank {rank}: invalid DNA sequence")
             mutation_rate = parse_number(record[11], allow_blank=True)
             v_coverage = parse_number(record[14], allow_blank=True)
             rows.append(
@@ -120,7 +120,7 @@ class SummaryReader:
                 )
             )
         if not rows:
-            raise ValidationError(f"{path.name}: ingen resultatlinjer")
+            raise ValidationError(f"{path.name}: no result lines")
         rows.sort(key=lambda item: item.rank)
         return SampleFile(
             path=path,
@@ -139,10 +139,10 @@ class RunDiscovery:
     def discover(self, run_directory: Path, expected_samples: int = 24) -> RunManifest:
         run_directory = run_directory.expanduser().resolve()
         if not run_directory.is_dir():
-            raise ValidationError(f"Kjøringsmappen finnes ikke: {run_directory}")
+            raise ValidationError(f"Run folder does not exist: {run_directory}")
         date_match = DATE_RE.search(run_directory.name)
         if not date_match:
-            raise ValidationError("Kjøringsmappen må inneholde dato på formatet YYYY_MM_DD")
+            raise ValidationError("Run folder must contain date in format YYYY_MM_DD")
         run_date = date_match.group("date")
 
         leader_dirs = [
@@ -155,13 +155,13 @@ class RunDiscovery:
         ]
         if len(leader_dirs) != 1 or len(fr1_dirs) != 1:
             raise ValidationError(
-                f"Forventet én Leader- og én FR1-mappe, fant {len(leader_dirs)} og {len(fr1_dirs)}"
+                f"Expected one Leader and one FR1 folder, found {len(leader_dirs)} and {len(fr1_dirs)}"
             )
 
         leader_paths = sorted(leader_dirs[0].glob(f"*{SUMMARY_SUFFIX}"))
         fr1_paths = sorted(fr1_dirs[0].glob(f"*{SUMMARY_SUFFIX}"))
         if not leader_paths and not fr1_paths:
-            raise ValidationError("Fant ingen top10-sammendragsfiler")
+            raise ValidationError("No top10 summary files found")
 
         files = [
             *(self.reader.read(path, "Leader") for path in leader_paths),
@@ -172,7 +172,7 @@ class RunDiscovery:
             key = (item.sample, item.sample_number, item.target)
             if key in seen_keys:
                 raise ValidationError(
-                    f"Duplikat: {item.sample}, S{item.sample_number}, {item.target}"
+                    f"Duplicate: {item.sample}, S{item.sample_number}, {item.target}"
                 )
             seen_keys.add(key)
 
@@ -183,15 +183,15 @@ class RunDiscovery:
             missing_leader = sorted(fr1_keys - leader_keys)
             parts = []
             if missing_fr1:
-                parts.append(f"mangler FR1 for {len(missing_fr1)} prøve(r)")
+                parts.append(f"missing FR1 for {len(missing_fr1)} sample(s)")
             if missing_leader:
-                parts.append(f"mangler Leader for {len(missing_leader)} prøve(r)")
+                parts.append(f"missing Leader for {len(missing_leader)} sample(s)")
             raise ValidationError("; ".join(parts))
 
         warnings: list[str] = []
         if len(leader_paths) != expected_samples:
             warnings.append(
-                f"Forventet {expected_samples} prøver per target, fant {len(leader_paths)}"
+                f"Expected {expected_samples} samples per target, found {len(leader_paths)}"
             )
         files.sort(key=lambda item: (item.sample_number, 0 if item.target == "Leader" else 1))
         return RunManifest(

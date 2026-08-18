@@ -33,26 +33,26 @@ IUPAC_NUCLEOTIDES = frozenset("ACGTRYSWKMBDHVN")
 
 
 class ExternalAnalysisError(RuntimeError):
-    """Ekstern analyse svarte ikke med et trygt, forventet resultat."""
+    """External analysis did not respond with a safe, expected result."""
 
 
 def _tls_error(service: str, exc: requests.exceptions.SSLError) -> ExternalAnalysisError:
     return ExternalAnalysisError(
-        f"Kunne ikke kontakte {service} fordi HTTPS-sertifikatet ikke kunne "
-        "verifiseres mot Windows sitt sertifikatlager. Kjør INSTALLER PAKKER-"
-        "kommandoen på nytt etter siste oppdatering. Hvis feilen fortsetter, må "
-        "IT kontrollere at virksomhetens proxy-/Ivanti-rotsertifikat ligger i "
-        f"Windows Trusted Root Certification Authorities. Detaljer: {exc}"
+        f"Could not contact {service} because the HTTPS certificate could not "
+        "be verified against Windows' certificate store. Run INSTALL PACKAGES "
+        "command again after the latest update. If the error persists, "
+        "IT must check that the organization's proxy-/Ivanti-root certificate is in "
+        f"Windows Trusted Root Certification Authorities. Details: {exc}"
     )
 
 
 def normalize_sequence(sequence: str) -> str:
     normalized = "".join(sequence.split()).upper()
     if not normalized:
-        raise ValueError("Sekvensen er tom")
+        raise ValueError("Sequence is empty")
     invalid = sorted(set(normalized) - IUPAC_NUCLEOTIDES)
     if invalid:
-        raise ValueError(f"Sekvensen inneholder ugyldige tegn: {''.join(invalid)}")
+        raise ValueError(f"Sequence contains invalid characters: {''.join(invalid)}")
     return normalized
 
 

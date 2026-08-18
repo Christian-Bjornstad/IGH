@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSpinBox,
+    QStackedWidget,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -107,12 +108,12 @@ class MetricCard(QFrame):
 class PayloadDialog(QDialog):
     def __init__(self, service: str, endpoint: str, payload: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Bekreft sending til {service}")
+        self.setWindowTitle(f"Confirm sending to {service}")
         self.resize(760, 620)
         layout = QVBoxLayout(self)
         description = QLabel(
-            f"Mottaker: {endpoint}\n"
-            "Dette er nøyaktig innholdet som sendes. Prøvenummer og filnavn er ikke med."
+            f"Recipient: {endpoint}\n"
+            "This is the exact content being sent. Sample numbers and filenames are not included."
         )
         description.setWordWrap(True)
         layout.addWidget(description)
@@ -134,10 +135,10 @@ class PayloadDialog(QDialog):
 class PreviewDialog(QDialog):
     def __init__(self, payload: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Forhåndsvis pseudonymisert FASTA")
+        self.setWindowTitle("Preview Pseudonymized FASTA")
         self.resize(760, 620)
         layout = QVBoxLayout(self)
-        label = QLabel("Dette er payloaden som kan lagres eller sendes. Ingen data sendes nå.")
+        label = QLabel("This is the payload that can be saved or sent. No data is sent yet.")
         label.setWordWrap(True)
         layout.addWidget(label)
         preview = QPlainTextEdit()
@@ -176,7 +177,7 @@ class ExternalWorker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.settings = QSettings("IGH", "IGH Merge")
+        self.settings = QSettings("IGHV", "IGHV")
         self.service = MergeService()
         self.result: MergeResult | None = None
         self.external_batch: ExternalBatch | None = None
@@ -186,94 +187,142 @@ class MainWindow(QMainWindow):
         self._arrest_status_by_row: dict[int, str] = {}
         self._external_thread: QThread | None = None
         self._external_worker: ExternalWorker | None = None
-        self.setWindowTitle("IGH Merge")
+        self.setWindowTitle("IGHV")
         self.setWindowIcon(application_icon())
         self.setMinimumSize(1040, 720)
         self.resize(1380, 900)
         self._build()
         self._style()
-        self._set_status("Klar", "neutral")
+        self._set_status("Ready", "neutral")
         self._apply_interaction_cursors()
 
     def _build(self) -> None:
         root = QWidget()
         root.setObjectName("AppRoot")
-        layout = QVBoxLayout(root)
-        layout.setContentsMargins(22, 18, 22, 14)
-        layout.setSpacing(14)
+        main_layout = QHBoxLayout(root)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        header_panel = QFrame()
-        header_panel.setObjectName("AppHeader")
-        header = QHBoxLayout(header_panel)
-        header.setContentsMargins(18, 14, 18, 14)
-        header.setSpacing(14)
+        # Left sidebar navigation
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(240)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(16, 24, 16, 24)
+        sidebar_layout.setSpacing(8)
+
+        # App brand in sidebar
+        brand_container = QWidget()
+        brand_layout = QHBoxLayout(brand_container)
+        brand_layout.setContentsMargins(8, 8, 8, 16)
+        brand_layout.setSpacing(12)
         brand_icon = QLabel()
-        brand_icon.setObjectName("BrandIcon")
-        brand_icon.setFixedSize(56, 56)
-        brand_icon.setPixmap(application_icon().pixmap(48, 48))
+        brand_icon.setObjectName("SidebarBrandIcon")
+        brand_icon.setFixedSize(40, 40)
+        brand_icon.setPixmap(application_icon().pixmap(36, 36))
         brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_icon.setAccessibleName("IGH Merge appikon")
-        header.addWidget(brand_icon)
-        title_box = QVBoxLayout()
-        title_box.setSpacing(1)
-        eyebrow = QLabel("MOLEKYLÆRPATOLOGI  /  LOKAL ARBEIDSFLYT")
-        eyebrow.setObjectName("Eyebrow")
-        title = QLabel("IGH Merge")
-        title.setObjectName("AppTitle")
-        subtitle = QLabel("Sammenslåing, ekstern analyse og eksport av IGHV-SHM")
-        subtitle.setObjectName("AppSubtitle")
-        title_box.addWidget(eyebrow)
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-        header.addLayout(title_box)
-        header.addStretch()
-        privacy = QLabel("LOKAL OG SPORBAR")
+        brand_layout.addWidget(brand_icon)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(0)
+        app_title = QLabel("IGHV")
+        app_title.setObjectName("SidebarAppTitle")
+        app_subtitle = QLabel("Molecular Pathology")
+        app_subtitle.setObjectName("SidebarAppSubtitle")
+        brand_text.addWidget(app_title)
+        brand_text.addWidget(app_subtitle)
+        brand_layout.addLayout(brand_text)
+        brand_layout.addStretch()
+        sidebar_layout.addWidget(brand_container)
+
+        # Navigation buttons
+        self.nav_buttons = []
+        nav_items = [
+            ("Run", "Run validation & file detection"),
+            ("Controls", "QC controls for Leader & FR1"),
+            ("IMGT & ARResT", "External sequence analysis"),
+            ("Export", "Generate merged Excel workbook"),
+            ("Settings", "Local preferences & defaults"),
+        ]
+        for idx, (label, tooltip) in enumerate(nav_items):
+            btn = QPushButton(label)
+            btn.setObjectName("NavButton")
+            btn.setCheckable(True)
+            btn.setToolTip(tooltip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(partial(self._switch_page, idx))
+            self.nav_buttons.append(btn)
+            sidebar_layout.addWidget(btn)
+        self.nav_buttons[0].setChecked(True)
+
+        sidebar_layout.addStretch()
+
+        # Status badge in sidebar
+        self.status_badge = QLabel("Ready")
+        self.status_badge.setObjectName("SidebarStatusBadge")
+        self.status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_badge.setFixedHeight(32)
+        self.status_badge.setAccessibleName("Application status")
+        sidebar_layout.addWidget(self.status_badge)
+
+        # Version info
+        version_label = QLabel("v0.2.0  •  Python 3.11+")
+        version_label.setObjectName("SidebarVersion")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sidebar_layout.addWidget(version_label)
+
+        main_layout.addWidget(sidebar)
+
+        # Main content area
+        content = QWidget()
+        content.setObjectName("ContentArea")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(32, 24, 32, 24)
+        content_layout.setSpacing(20)
+
+        # Top bar with privacy badge
+        top_bar = QHBoxLayout()
+        top_bar.setSpacing(16)
+        privacy = QLabel("LOCAL AND TRACEABLE")
         privacy.setObjectName("PrivacyBadge")
         privacy.setToolTip(
-            "Råfiler og koblingsdata lagres lokalt. Ekstern sending bekreftes eksplisitt."
+            "Raw files and linkage data are stored locally. External sending requires explicit confirmation."
         )
-        privacy.setFixedHeight(34)
-        header.addWidget(privacy, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.status_badge = QLabel("Klar")
-        self.status_badge.setObjectName("StatusBadge")
-        self.status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_badge.setMinimumWidth(116)
-        self.status_badge.setFixedHeight(34)
-        self.status_badge.setAccessibleName("Programstatus")
-        header.addWidget(self.status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(header_panel)
+        privacy.setFixedHeight(32)
+        top_bar.addWidget(privacy)
+        top_bar.addStretch()
+        content_layout.addLayout(top_bar)
 
+        # Metric cards
         cards = QHBoxLayout()
-        cards.setSpacing(12)
-        self.row_card = MetricCard("Merged-rader", "Leader + FR1", Palette.navy)
-        self.control_card = MetricCard("Kontrollfeil", "Krever oppfølging", Palette.red)
-        self.support_card = MetricCard("FR1-støtte", "Eksakte overlapp", Palette.green)
+        cards.setSpacing(16)
+        self.row_card = MetricCard("Merged rows", "Leader + FR1", Palette.navy)
+        self.control_card = MetricCard("Control errors", "Requires follow-up", Palette.red)
+        self.support_card = MetricCard("FR1 support", "Exact overlaps", Palette.green)
         for card in (self.row_card, self.control_card, self.support_card):
             cards.addWidget(card)
-        layout.addLayout(cards)
+        content_layout.addLayout(cards)
 
-        workflow_label = QLabel("ARBEIDSFLYT")
-        workflow_label.setObjectName("WorkflowLabel")
-        layout.addWidget(workflow_label)
-        self.tabs = QTabWidget()
-        self.tabs.setObjectName("WorkflowTabs")
-        self.tabs.setDocumentMode(True)
-        self.tabs.addTab(self._run_tab(), "Kjøring")
-        self.tabs.addTab(self._controls_tab(), "Kontroller")
-        self.tabs.addTab(self._external_tab(), "IMGT og ARResT")
-        self.tabs.addTab(self._export_tab(), "Eksport")
-        self.tabs.addTab(self._settings_tab(), "Innstillinger")
-        layout.addWidget(self.tabs, 1)
+        # Stacked widget for pages
+        self.page_stack = QStackedWidget()
+        self.page_stack.setObjectName("PageStack")
+        self.page_stack.addWidget(self._run_tab())
+        self.page_stack.addWidget(self._controls_tab())
+        self.page_stack.addWidget(self._external_tab())
+        self.page_stack.addWidget(self._export_tab())
+        self.page_stack.addWidget(self._settings_tab())
+        content_layout.addWidget(self.page_stack, 1)
 
+        # Footer
         footer = QHBoxLayout()
         footer_text = QLabel(
-            "IGH Merge  •  råfiler endres aldri  •  ekstern sending krever bekreftelse"
+            "IGHV  •  raw files are never modified  •  external sending requires confirmation"
         )
         footer_text.setObjectName("FooterText")
         footer.addWidget(footer_text)
         footer.addStretch()
-        footer.addWidget(QLabel("Python 3.11+  /  lokal desktop"))
-        layout.addLayout(footer)
+        content_layout.addLayout(footer)
+
+        main_layout.addWidget(content, 1)
         self.setCentralWidget(root)
 
     def _run_tab(self) -> QWidget:
@@ -282,39 +331,39 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(14)
         intro = QLabel(
-            "1  KJØRING   Velg mappen som inneholder Leader- og FR1-output. "
-            "Appen leser filene uten å endre rådata."
+            "1  RUN   Select the folder containing Leader and FR1 output. "
+            "The app reads files without modifying raw data."
         )
         intro.setObjectName("PageIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
-        group = QGroupBox("Velg og valider kjøringsmappe")
+        group = QGroupBox("Select and validate run folder")
         grid = QGridLayout(group)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
         self.run_edit = QLineEdit(
-            self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGH-data"))
+            self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGHV-data"))
         )
         self.run_edit.setClearButtonEnabled(True)
-        self.run_edit.setAccessibleName("Kjøringsmappe")
-        browse = QPushButton("Velg mappe")
+        self.run_edit.setAccessibleName("Run folder")
+        browse = QPushButton("Browse folder")
         browse.clicked.connect(self._browse_run)
-        self.validate_button = QPushButton("Valider kjøring")
+        self.validate_button = QPushButton("Validate run")
         self.validate_button.setObjectName("PrimaryButton")
         self.validate_button.clicked.connect(self._validate)
-        grid.addWidget(QLabel("Mappe"), 0, 0)
+        grid.addWidget(QLabel("Folder"), 0, 0)
         grid.addWidget(self.run_edit, 0, 1)
         grid.addWidget(browse, 0, 2)
         grid.addWidget(self.validate_button, 0, 3)
         layout.addWidget(group)
 
         self.file_table = QTableWidget(0, 5)
-        self.file_table.setHorizontalHeaderLabels(["S-nr.", "Prøve", "Leader-rader", "FR1-rader", "Status"])
+        self.file_table.setHorizontalHeaderLabels(["S-no.", "Sample", "Leader rows", "FR1 rows", "Status"])
         self._configure_table(self.file_table)
-        self.file_table.setAccessibleName("Oppdagede prøvefiler")
+        self.file_table.setAccessibleName("Detected sample files")
         layout.addWidget(self.file_table, 1)
-        self.run_message = QLabel("Velg en kjøringsmappe og valider før eksport.")
+        self.run_message = QLabel("Select a run folder and validate before export.")
         self.run_message.setObjectName("InfoCallout")
         self.run_message.setWordWrap(True)
         layout.addWidget(self.run_message)
@@ -326,16 +375,16 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(14)
         intro = QLabel(
-            "2  KONTROLLER   Kjøringskontrollene vises separat for Leader og FR1. "
-            "Status må vurderes etter lokal prosedyre."
+            "2  CONTROLS   Run controls are shown separately for Leader and FR1. "
+            "Status must be assessed according to local procedure."
         )
         intro.setObjectName("PageIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
         self.control_table = QTableWidget(0, 4)
-        self.control_table.setHorizontalHeaderLabels(["Kontroll", "Target", "Status", "Detaljer"])
+        self.control_table.setHorizontalHeaderLabels(["Control", "Target", "Status", "Details"])
         self._configure_table(self.control_table)
-        self.control_table.setAccessibleName("Kjøringskontroller")
+        self.control_table.setAccessibleName("Run controls")
         layout.addWidget(self.control_table, 1)
         return page
 
@@ -346,9 +395,9 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
 
         information = QLabel(
-            "3  EKSTERN ANALYSE   Velg Leader-sekvenser. Før sending erstattes "
-            "prøvenummeret med en tilfeldig ekstern ID. Kun FASTA-headeren og "
-            "nukleotidsekvensen sendes."
+            "3  EXTERNAL ANALYSIS   Select Leader sequences. Before sending, "
+            "the sample number is replaced with a random external ID. Only the FASTA header and "
+            "nucleotide sequence are sent."
         )
         information.setObjectName("PrivacyCallout")
         information.setWordWrap(True)
@@ -357,16 +406,16 @@ class MainWindow(QMainWindow):
         self.candidate_table = QTableWidget(0, 10)
         self.candidate_table.setHorizontalHeaderLabels(
             [
-                "Velg",
-                "Ekstern ID",
-                "Prøve (kun lokal)",
+                "Select",
+                "External ID",
+                "Sample (local only)",
                 "Target",
-                "Rang",
+                "Rank",
                 "% reads",
                 "IMGT",
                 "ARResT",
                 "Subset",
-                "Gruppe / kommentar",
+                "Group / comment",
             ]
         )
         self._configure_table(self.candidate_table)
@@ -378,7 +427,7 @@ class MainWindow(QMainWindow):
         self.candidate_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
-        self.candidate_table.setAccessibleName("Leader-kandidater for ekstern analyse")
+        self.candidate_table.setAccessibleName("Leader candidates for external analysis")
         layout.addWidget(self.candidate_table, 1)
 
         action_bar = QFrame()
@@ -387,25 +436,25 @@ class MainWindow(QMainWindow):
         action_grid.setContentsMargins(12, 10, 12, 10)
         action_grid.setHorizontalSpacing(8)
         action_grid.setVerticalSpacing(8)
-        local_label = QLabel("LOKALT")
+        local_label = QLabel("LOCAL")
         local_label.setObjectName("ActionLabel")
-        external_label = QLabel("EKSTERNT")
+        external_label = QLabel("EXTERNAL")
         external_label.setObjectName("ActionLabel")
-        self.select_candidates_button = QPushButton("Velg gule Leader-kandidater")
+        self.select_candidates_button = QPushButton("Select yellow Leader candidates")
         self.select_candidates_button.clicked.connect(self._select_candidates)
-        preview_fasta = QPushButton("Forhåndsvis FASTA")
+        preview_fasta = QPushButton("Preview FASTA")
         preview_fasta.clicked.connect(self._preview_fasta)
-        export_fasta = QPushButton("Lagre FASTA lokalt")
+        export_fasta = QPushButton("Save FASTA locally")
         export_fasta.clicked.connect(self._export_fasta)
-        self.send_imgt_button = QPushButton("Send til IMGT")
+        self.send_imgt_button = QPushButton("Send to IMGT")
         self.send_imgt_button.setObjectName("PrimaryButton")
         self.send_imgt_button.setEnabled(False)
         self.send_imgt_button.clicked.connect(self._send_imgt)
-        self.send_arrest_button = QPushButton("Send til ARResT")
+        self.send_arrest_button = QPushButton("Send to ARResT")
         self.send_arrest_button.setObjectName("PrimaryButton")
         self.send_arrest_button.setEnabled(False)
         self.send_arrest_button.clicked.connect(self._send_arrest)
-        self.report_button = QPushButton("Lag rapportutkast")
+        self.report_button = QPushButton("Generate report draft")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
         action_grid.addWidget(local_label, 0, 0)
@@ -424,11 +473,11 @@ class MainWindow(QMainWindow):
         self.external_progress.setTextVisible(False)
         self.external_progress.setFixedHeight(4)
         self.external_progress.setVisible(False)
-        self.external_progress.setAccessibleName("Ekstern analyse pågår")
+        self.external_progress.setAccessibleName("External analysis in progress")
         layout.addWidget(self.external_progress)
 
         self.external_status = QLabel(
-            "Ingen sekvenser er sendt. Maksimalt 50 sekvenser per batch."
+            "No sequences have been sent. Maximum 50 sequences per batch."
         )
         self.external_status.setObjectName("StatusCallout")
         self.external_status.setWordWrap(True)
@@ -441,30 +490,30 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(14)
         intro = QLabel(
-            "4  EKSPORT   Lag én kompatibel merged-fane med 22 kolonner. "
-            "Eksisterende filer overskrives bare etter bekreftelse."
+            "4  EXPORT   Create a single compatible merged sheet with 22 columns. "
+            "Existing files are overwritten only after confirmation."
         )
         intro.setObjectName("PageIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
-        excel_group = QGroupBox("Merged Excel-arbeidsbok")
+        excel_group = QGroupBox("Merged Excel workbook")
         grid = QGridLayout(excel_group)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(12)
         self.output_edit = QLineEdit()
         self.output_edit.setClearButtonEnabled(True)
-        self.output_edit.setAccessibleName("Filnavn for merged Excel")
-        output_browse = QPushButton("Velg fil")
+        self.output_edit.setAccessibleName("Filename for merged Excel")
+        output_browse = QPushButton("Select file")
         output_browse.clicked.connect(self._browse_output)
-        self.export_button = QPushButton("Eksporter merged.xlsx")
+        self.export_button = QPushButton("Export merged.xlsx")
         self.export_button.setObjectName("PrimaryButton")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export_excel)
         self.highlight_excel_checkbox = QCheckBox(
-            "Marker appens gule kandidatrader i Excel"
+            "Highlight app's yellow candidate rows in Excel"
         )
         self.highlight_excel_checkbox.setToolTip(
-            "Farger de samme foreløpige Leader-kandidatene gult over alle 22 kolonner."
+            "Colors the same preliminary Leader candidates yellow across all 22 columns."
         )
         grid.addWidget(QLabel("Output"), 0, 0)
         grid.addWidget(self.output_edit, 0, 1)
@@ -473,8 +522,8 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.export_button, 1, 2)
         layout.addWidget(excel_group)
         export_note = QLabel(
-            "Excel-filen inneholder én fane, formler og betinget formatering. "
-            "Velg gulmarkering hvis kandidatene også skal være synlige i arbeidsboken."
+            "The Excel file contains a single sheet, formulas, and conditional formatting. "
+            "Select yellow highlighting if candidates should also be visible in the workbook."
         )
         export_note.setObjectName("InfoCallout")
         export_note.setWordWrap(True)
@@ -488,41 +537,41 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(14)
         intro = QLabel(
-            "INNSTILLINGER   Lokale standardvalg for denne Windows-brukeren. "
-            "Kliniske kontrollgrenser er versjonerte og skrivebeskyttede."
+            "SETTINGS   Local default choices for this Windows user. "
+            "Clinical control limits are versioned and write-protected."
         )
         intro.setObjectName("PageIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
-        group = QGroupBox("Lokale innstillinger")
+        group = QGroupBox("Local settings")
         form = QFormLayout(group)
         self.default_data_edit = QLineEdit(
-            self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGH-data"))
+            self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGHV-data"))
         )
         self.default_data_edit.setClearButtonEnabled(True)
-        self.default_data_edit.setAccessibleName("Standard datamappe")
+        self.default_data_edit.setAccessibleName("Default data folder")
         self.expected_spin = QSpinBox()
         self.expected_spin.setRange(1, 96)
         self.expected_spin.setValue(int(self.settings.value("expectedSamples", 24)))
-        save = QPushButton("Lagre innstillinger")
+        save = QPushButton("Save settings")
         save.setObjectName("PrimaryButton")
         save.setMinimumWidth(210)
         save.clicked.connect(self._save_settings)
         save_row = QHBoxLayout()
         save_row.addStretch()
         save_row.addWidget(save)
-        form.addRow("Standard datamappe", self.default_data_edit)
-        form.addRow("Forventet antall per target", self.expected_spin)
+        form.addRow("Default data folder", self.default_data_edit)
+        form.addRow("Expected samples per target", self.expected_spin)
         form.addRow("", save_row)
         layout.addWidget(group)
 
-        rules = QGroupBox("Kontrollgrenser (skrivebeskyttet)")
+        rules = QGroupBox("Control limits (write-protected)")
         rules_layout = QVBoxLayout(rules)
         rules_layout.addWidget(
             QLabel(
-                "IGH-PK ≥2,5 % | IGH-SHM ≥2,5 % og mutasjon ≥2,0 % | "
-                "NGS NEG <1,0 % | NTC <10 000 reads\n"
-                "Leader og FR1 kontrolleres separat. Prøver vurderes manuelt."
+                "IGH-PK ≥2.5 % | IGH-SHM ≥2.5 % and mutation ≥2.0 % | "
+                "NGS NEG <1.0 % | NTC <10 000 reads\n"
+                "Leader and FR1 are controlled separately. Samples are assessed manually."
             )
         )
         layout.addWidget(rules)
@@ -549,24 +598,28 @@ class MainWindow(QMainWindow):
         for widget_type in (QPushButton, QCheckBox):
             for widget in self.findChildren(widget_type):
                 widget.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.tabs.tabBar().setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def _switch_page(self, index: int) -> None:
+        self.page_stack.setCurrentIndex(index)
+        for i, btn in enumerate(self.nav_buttons):
+            btn.setChecked(i == index)
 
     def _browse_run(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Velg IGHV-kjøring", self.run_edit.text())
+        path = QFileDialog.getExistingDirectory(self, "Select IGHV run", self.run_edit.text())
         if path:
             self.run_edit.setText(path)
 
     def _browse_output(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Lagre merged-fil", self.output_edit.text(), "Excel (*.xlsx)"
+            self, "Save merged file", self.output_edit.text(), "Excel (*.xlsx)"
         )
         if path:
             self.output_edit.setText(path if path.lower().endswith(".xlsx") else f"{path}.xlsx")
 
     def _validate(self) -> None:
-        self._set_status("Validerer …", "busy")
+        self._set_status("Validating …", "busy")
         self.validate_button.setEnabled(False)
-        self.validate_button.setText("Validerer …")
+        self.validate_button.setText("Validating …")
         QApplication.processEvents()
         self.external_batch = None
         self.imgt_result = None
@@ -580,14 +633,14 @@ class MainWindow(QMainWindow):
             self.export_button.setEnabled(False)
             self.send_imgt_button.setEnabled(False)
             self.send_arrest_button.setEnabled(False)
-            self._set_status("Validering feilet", "error")
-            QMessageBox.critical(self, "Validering feilet", str(exc))
+            self._set_status("Validation failed", "error")
+            QMessageBox.critical(self, "Validation failed", str(exc))
             return
         finally:
             self.validate_button.setEnabled(True)
-            self.validate_button.setText("Valider kjøring")
+            self.validate_button.setText("Validate run")
         self._populate_result()
-        self._set_status("Validert", "success")
+        self._set_status("Validated", "success")
         self.export_button.setEnabled(True)
         self.send_imgt_button.setEnabled(True)
         self.send_arrest_button.setEnabled(True)
@@ -598,7 +651,7 @@ class MainWindow(QMainWindow):
         if self.result.manifest.warnings:
             self.run_message.setText("\n".join(self.result.manifest.warnings))
         else:
-            self.run_message.setText("Kjøringen er strukturelt validert og klar for eksport.")
+            self.run_message.setText("Run is structurally validated and ready for export.")
 
     def _populate_result(self) -> None:
         assert self.result is not None
@@ -675,8 +728,8 @@ class MainWindow(QMainWindow):
                         QColor(Palette.functional_yellow)
                     )
                     self.candidate_table.item(row, column).setToolTip(
-                        "Foreløpig funksjonell gruppe: Y/Y og enten ≥2,5 % reads "
-                        "eller eksakt FR1-støtte ≥2,5 %."
+                        "Preliminary functional group: Y/Y and either ≥2.5 % reads "
+                        "or exact FR1 support ≥2.5 %."
                     )
             elif (
                 item.source.percent_total_reads >= 2.5
@@ -690,7 +743,7 @@ class MainWindow(QMainWindow):
                         QColor(Palette.excluded_gray)
                     )
                     self.candidate_table.item(row, column).setToolTip(
-                        "Ikke gul: LymphoTrack viser ikke både In-frame=Y og "
+                        "Not yellow: LymphoTrack does not show both In-frame=Y and "
                         "No Stop codon=Y."
                     )
 
@@ -721,10 +774,10 @@ class MainWindow(QMainWindow):
 
     def _ensure_external_batch(self) -> ExternalBatch:
         if not self.result:
-            raise ValueError("Valider en kjøring før du velger sekvenser")
+            raise ValueError("Validate a run before selecting sequences")
         selected = self._selected_result_indices()
         if not selected:
-            raise ValueError("Velg minst én Leader-sekvens")
+            raise ValueError("Select at least one Leader sequence")
         if (
             self.external_batch is not None
             and tuple(item.row_index for item in self.external_batch.candidates) == selected
@@ -754,7 +807,7 @@ class MainWindow(QMainWindow):
         try:
             batch = self._ensure_external_batch()
         except ValueError as exc:
-            QMessageBox.warning(self, "Kan ikke lage FASTA", str(exc))
+            QMessageBox.warning(self, "Cannot create FASTA", str(exc))
             return
         PreviewDialog(batch.fasta, self).exec()
 
@@ -767,13 +820,13 @@ class MainWindow(QMainWindow):
     def _confirm_and_start_external(self, service: str, endpoint: str) -> None:
         if self._external_thread and self._external_thread.isRunning():
             QMessageBox.information(
-                self, "Analyse pågår", "Vent til den pågående analysen er ferdig."
+                self, "Analysis in progress", "Wait for the ongoing analysis to finish."
             )
             return
         try:
             batch = self._ensure_external_batch()
         except ValueError as exc:
-            QMessageBox.warning(self, "Kan ikke sende", str(exc))
+            QMessageBox.warning(self, "Cannot send", str(exc))
             return
         dialog = PayloadDialog(service, endpoint, batch.fasta, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -787,17 +840,17 @@ class MainWindow(QMainWindow):
         except (OSError, PrivacyError) as exc:
             QMessageBox.critical(
                 self,
-                "Kan ikke starte ekstern analyse",
-                f"Den lokale ID-koblingen kunne ikke lagres:\n{exc}",
+                "Cannot start external analysis",
+                f"The local ID mapping could not be saved:\n{exc}",
             )
             return
         self.send_imgt_button.setEnabled(False)
         self.send_arrest_button.setEnabled(False)
         self.external_status.setText(
-            f"Sender {len(batch.candidates)} pseudonymiserte sekvenser til {service} …"
+            f"Sending {len(batch.candidates)} pseudonymized sequences to {service} …"
         )
         self.external_progress.setVisible(True)
-        self._set_status(f"{service} pågår", "busy")
+        self._set_status(f"{service} in progress", "busy")
         thread = QThread(self)
         worker = ExternalWorker(service, batch)
         worker.moveToThread(thread)
@@ -822,7 +875,7 @@ class MainWindow(QMainWindow):
         try:
             if service == "IMGT":
                 if not isinstance(result, ImgtBatchResult):
-                    raise TypeError("Uventet IMGT-resultattype")
+                    raise TypeError("Unexpected IMGT result type")
                 save_path = save_imgt_result(
                     self.result.manifest.run_directory, batch, result
                 )
@@ -836,17 +889,17 @@ class MainWindow(QMainWindow):
                         if record.productive is True
                         else "not productive"
                         if record.productive is False
-                        else "ukjent"
+                        else "unknown"
                     )
                     self._imgt_status_by_row[row_index] = status
-                version = result.program_version or "ukjent versjon"
+                version = result.program_version or "unknown version"
                 message = (
-                    f"IMGT {version} fullført for {len(result.records)} sekvenser. "
-                    f"Resultatet er lagret i {save_path.parent}."
+                    f"IMGT {version} completed for {len(result.records)} sequences. "
+                    f"Result saved in {save_path.parent}."
                 )
             else:
                 if not isinstance(result, ArrestBatchResult):
-                    raise TypeError("Uventet ARResT-resultattype")
+                    raise TypeError("Unexpected ARResT result type")
                 save_path = save_arrest_result(
                     self.result.manifest.run_directory, batch, result
                 )
@@ -854,25 +907,25 @@ class MainWindow(QMainWindow):
                 self.arrest_result = result
                 for record in result.records:
                     row_index = batch.by_id()[record.external_id].row_index
-                    status = record.subset or "ukjent"
+                    status = record.subset or "unknown"
                     if record.confidence:
                         status += f" ({record.confidence})"
                     self._arrest_status_by_row[row_index] = status
                 message = (
-                    f"ARResT fullført for {len(result.records)} sekvenser. "
-                    f"Resultatet er lagret i {save_path.parent}."
+                    f"ARResT completed for {len(result.records)} sequences. "
+                    f"Result saved in {save_path.parent}."
                 )
         except (OSError, PrivacyError, TypeError, ValueError) as exc:
-            self.external_status.setText(f"{service}-resultatet kunne ikke lagres: {exc}")
-            QMessageBox.critical(self, f"{service} feilet", str(exc))
+            self.external_status.setText(f"{service} result could not be saved: {exc}")
+            QMessageBox.critical(self, f"{service} failed", str(exc))
             return
         self._refresh_external_table()
         self.external_status.setText(message)
-        self._set_status(f"{service} fullført", "success")
+        self._set_status(f"{service} completed", "success")
 
     def _generate_reports(self) -> None:
         if not self.result or not self.external_batch or not self.imgt_result:
-            QMessageBox.warning(self, "Rapport", "IMGT må være fullført først.")
+            QMessageBox.warning(self, "Report", "IMGT must be completed first.")
             return
         try:
             directory = generate_clinical_report_package(
@@ -883,18 +936,18 @@ class MainWindow(QMainWindow):
                 self.arrest_result,
             )
         except (OSError, PrivacyError, ValueError) as exc:
-            QMessageBox.critical(self, "Rapport feilet", str(exc))
+            QMessageBox.critical(self, "Report failed", str(exc))
             return
         QMessageBox.information(
             self,
-            "Rapporter laget",
-            f"Rapportutkast og auditdata er lagret i:\n{directory}",
+            "Reports created",
+            f"Report drafts and audit data saved in:\n{directory}",
         )
 
     def _external_failed(self, service: str, message: str) -> None:
-        self.external_status.setText(f"{service} feilet: {message}")
-        self._set_status(f"{service} feilet", "error")
-        QMessageBox.critical(self, f"{service} feilet", message)
+        self.external_status.setText(f"{service} failed: {message}")
+        self._set_status(f"{service} failed", "error")
+        QMessageBox.critical(self, f"{service} failed", message)
 
     def _external_finished(self) -> None:
         self.external_progress.setVisible(False)
@@ -938,8 +991,8 @@ class MainWindow(QMainWindow):
         if self.result.manifest.warnings:
             answer = QMessageBox.question(
                 self,
-                "Bekreft prøveantall",
-                "\n".join(self.result.manifest.warnings) + "\nVil du likevel eksportere?",
+                "Confirm sample count",
+                "\n".join(self.result.manifest.warnings) + "\nDo you still want to export?",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -947,7 +1000,7 @@ class MainWindow(QMainWindow):
         overwrite = False
         if output.exists():
             answer = QMessageBox.question(
-                self, "Filen finnes", f"{output.name} finnes allerede. Overskrive?"
+                self, "File exists", f"{output.name} already exists. Overwrite?"
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -960,35 +1013,35 @@ class MainWindow(QMainWindow):
                 highlight_functional_rows=self.highlight_excel_checkbox.isChecked(),
             )
         except (OSError, PrivacyError, FileExistsError) as exc:
-            QMessageBox.critical(self, "Eksport feilet", str(exc))
+            QMessageBox.critical(self, "Export failed", str(exc))
             return
-        self._set_status("Eksportert", "success")
+        self._set_status("Exported", "success")
         QMessageBox.information(
             self,
-            "Eksport fullført",
-            f"Skrev {len(self.result.rows)} rader til:\n{written}",
+            "Export completed",
+            f"Wrote {len(self.result.rows)} rows to:\n{written}",
         )
 
     def _export_fasta(self) -> None:
         try:
             batch = self._ensure_external_batch()
         except ValueError as exc:
-            QMessageBox.warning(self, "Kan ikke lage FASTA", str(exc))
+            QMessageBox.warning(self, "Cannot create FASTA", str(exc))
             return
         default = ""
         if self.result:
-            default = str(self.result.manifest.run_directory / f"{self.result.manifest.run_date}_arbeidsliste.fasta")
-        path, _ = QFileDialog.getSaveFileName(self, "Lagre lokal FASTA", default, "FASTA (*.fasta)")
+            default = str(self.result.manifest.run_directory / f"{self.result.manifest.run_date}_worklist.fasta")
+        path, _ = QFileDialog.getSaveFileName(self, "Save local FASTA", default, "FASTA (*.fasta)")
         if not path:
             return
         output = Path(path)
         if output.exists():
-            QMessageBox.warning(self, "Filen finnes", "Velg et nytt filnavn; FASTA overskrives ikke.")
+            QMessageBox.warning(self, "File exists", "Choose a new filename; FASTA is not overwritten.")
             return
         try:
             ensure_outside_git(output)
         except PrivacyError as exc:
-            QMessageBox.critical(self, "Ugyldig lagringssted", str(exc))
+            QMessageBox.critical(self, "Invalid save location", str(exc))
             return
         output.write_text(
             batch.fasta,
@@ -996,17 +1049,17 @@ class MainWindow(QMainWindow):
         )
         QMessageBox.information(
             self,
-            "FASTA lagret lokalt",
-            f"Lagret {len(batch.candidates)} pseudonymiserte sekvenser. "
-            "Ingen data er sendt eksternt.",
+            "FASTA saved locally",
+            f"Saved {len(batch.candidates)} pseudonymized sequences. "
+            "No data sent externally.",
         )
 
     def closeEvent(self, event) -> None:
         if self._external_thread and self._external_thread.isRunning():
             QMessageBox.information(
                 self,
-                "Analyse pågår",
-                "Vent til den eksterne analysen er ferdig før appen lukkes.",
+                "Analysis in progress",
+                "Wait for the external analysis to finish before closing the app.",
             )
             event.ignore()
             return
@@ -1016,7 +1069,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("defaultDataDirectory", self.default_data_edit.text())
         self.settings.setValue("expectedSamples", self.expected_spin.value())
         self.run_edit.setText(self.default_data_edit.text())
-        QMessageBox.information(self, "Innstillinger", "Lokale innstillinger er lagret.")
+        QMessageBox.information(self, "Settings", "Local settings saved.")
 
     def _style(self) -> None:
         self.setStyleSheet(
@@ -1028,57 +1081,80 @@ class MainWindow(QMainWindow):
                 font-size: 10pt;
             }}
             QWidget#AppRoot {{ background: {Palette.app_bg}; }}
+            QWidget#ContentArea {{ background: {Palette.app_bg}; }}
 
-            QFrame#AppHeader {{
+            QFrame#Sidebar {{
                 background: {Palette.panel};
-                border: 1px solid {Palette.border};
-                border-radius: 12px;
+                border-right: 1px solid {Palette.border};
             }}
-            QLabel#BrandIcon {{
+            QLabel#SidebarBrandIcon {{
                 background: {Palette.pale_blue};
                 border: 1px solid #BFDBFE;
-                border-radius: 10px;
+                border-radius: 8px;
             }}
-            QLabel#Eyebrow, QLabel#WorkflowLabel, QLabel#MetricLabel,
-            QLabel#ActionLabel {{
-                color: {Palette.muted};
-                font-size: 8pt;
-                font-weight: 700;
-            }}
-            QLabel#AppTitle {{
+            QLabel#SidebarAppTitle {{
                 color: {Palette.navy};
                 font-family: "Segoe UI";
-                font-size: 22pt;
+                font-size: 16pt;
                 font-weight: 700;
             }}
-            QLabel#AppSubtitle, QLabel#MetricDescription, QLabel#FooterText {{
+            QLabel#SidebarAppSubtitle {{
                 color: {Palette.muted};
+                font-size: 8pt;
+                font-weight: 500;
             }}
+            QPushButton#NavButton {{
+                background: transparent;
+                color: {Palette.ink};
+                border: none;
+                border-radius: 8px;
+                padding: 12px 16px;
+                text-align: left;
+                font-weight: 600;
+                font-size: 10pt;
+            }}
+            QPushButton#NavButton:hover {{
+                background: {Palette.pale_blue};
+                color: {Palette.blue};
+            }}
+            QPushButton#NavButton:checked {{
+                background: {Palette.blue};
+                color: white;
+            }}
+            QPushButton#NavButton:checked:hover {{
+                background: {Palette.blue_hover};
+            }}
+            QLabel#SidebarStatusBadge {{
+                background: {Palette.subtle};
+                color: {Palette.navy};
+                border: 1px solid {Palette.border};
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-weight: 700;
+                font-size: 9pt;
+            }}
+            QLabel#SidebarStatusBadge[tone="busy"] {{
+                background: {Palette.pale_blue}; color: {Palette.blue}; border-color: #BFDBFE;
+            }}
+            QLabel#SidebarStatusBadge[tone="success"] {{
+                background: {Palette.pale_green}; color: {Palette.green}; border-color: #BBF7D0;
+            }}
+            QLabel#SidebarStatusBadge[tone="error"] {{
+                background: {Palette.pale_red}; color: {Palette.red}; border-color: #FECACA;
+            }}
+            QLabel#SidebarVersion {{
+                color: {Palette.muted};
+                font-size: 8pt;
+            }}
+
             QLabel#PrivacyBadge {{
                 background: {Palette.pale_green};
                 color: {Palette.green};
                 border: 1px solid #BBF7D0;
-                border-radius: 10px;
-                padding: 7px 10px;
+                border-radius: 8px;
+                padding: 6px 12px;
                 font-size: 8pt;
                 font-weight: 700;
-            }}
-            QLabel#StatusBadge {{
-                background: {Palette.subtle};
-                color: {Palette.navy};
-                border: 1px solid {Palette.border};
-                border-radius: 11px;
-                padding: 7px 11px;
-                font-weight: 700;
-            }}
-            QLabel#StatusBadge[tone="busy"] {{
-                background: {Palette.pale_blue}; color: {Palette.blue}; border-color: #BFDBFE;
-            }}
-            QLabel#StatusBadge[tone="success"] {{
-                background: {Palette.pale_green}; color: {Palette.green}; border-color: #BBF7D0;
-            }}
-            QLabel#StatusBadge[tone="error"] {{
-                background: {Palette.pale_red}; color: {Palette.red}; border-color: #FECACA;
             }}
 
             QFrame#MetricCard {{
@@ -1129,6 +1205,11 @@ class MainWindow(QMainWindow):
                 background: {Palette.subtle};
                 border: 1px solid {Palette.border};
                 border-radius: 9px;
+            }}
+            QLabel#ActionLabel {{
+                color: {Palette.muted};
+                font-size: 8pt;
+                font-weight: 700;
             }}
 
             QLineEdit, QSpinBox, QPlainTextEdit {{
@@ -1201,36 +1282,19 @@ class MainWindow(QMainWindow):
             }}
             QTableCornerButton::section {{ background: {Palette.navy}; border: 0; }}
 
-            QTabWidget::pane {{
-                border: 1px solid {Palette.border};
-                border-radius: 0 8px 8px 8px;
-                background: {Palette.panel};
+            QStackedWidget#PageStack {{
+                background: transparent;
+                border: none;
             }}
-            QTabBar {{ background: {Palette.app_bg}; }}
-            QTabBar::tab {{
-                min-width: 128px;
-                padding: 10px 16px;
-                margin-right: 4px;
-                background: #E2E8F0;
-                color: {Palette.muted};
-                border: 1px solid {Palette.border};
-                border-bottom: 0;
-                border-top-left-radius: 7px;
-                border-top-right-radius: 7px;
-                font-weight: 600;
-            }}
-            QTabBar::tab:hover {{ background: {Palette.pale_blue}; color: {Palette.blue}; }}
-            QTabBar::tab:selected {{
-                background: {Palette.panel};
-                color: {Palette.navy};
-                border-top: 3px solid {Palette.blue};
-                padding-top: 8px;
-                font-weight: 700;
-            }}
-            QTabBar::tab:focus {{ border: 2px solid {Palette.blue}; }}
 
             QProgressBar {{ background: #DBEAFE; border: 0; border-radius: 2px; }}
             QProgressBar::chunk {{ background: {Palette.blue}; border-radius: 2px; }}
+
+            QLabel#FooterText {{
+                color: {Palette.muted};
+                font-size: 8pt;
+            }}
+
             QToolTip {{
                 background: {Palette.navy}; color: white; border: 0; padding: 6px;
             }}

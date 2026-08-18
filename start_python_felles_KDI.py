@@ -1,4 +1,4 @@
-"""Start IGH-appen inne i den allerede åpne Python Felles-prosessen."""
+"""Start IGH app inside the already open Python Common process."""
 
 from __future__ import annotations
 
@@ -20,24 +20,24 @@ def start() -> None:
     requirements = PROJECT_DIR / "requirements.txt"
     state_file = PROJECT_DIR / ".python_felles_state.json"
     if not source_dir.is_dir():
-        raise FileNotFoundError(f"Finner ikke programkoden i {source_dir}")
+        raise FileNotFoundError(f"Cannot find program code in {source_dir}")
     if not package_dir.is_dir():
         raise RuntimeError(
-            "Pakkene er ikke installert. Kjør INSTALLER PAKKER-kommandoen først."
+            "Packages not installed. Run INSTALL PACKAGES command first."
         )
     try:
         state = json.loads(state_file.read_text(encoding="utf-8"))
         installed_hash = state["requirements_sha256"]
     except (FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
         raise RuntimeError(
-            "Installasjonsstatus mangler eller er ugyldig. Kjør INSTALLER PAKKER-"
-            "kommandoen på nytt."
+            "Installation status missing or invalid. Run INSTALL PACKAGES "
+            "command again."
         ) from exc
     current_hash = hashlib.sha256(requirements.read_bytes()).hexdigest()
     if installed_hash != current_hash:
         raise RuntimeError(
-            "requirements.txt er endret siden pakkene ble installert. Kjør "
-            "INSTALLER PAKKER-kommandoen på nytt før appen startes."
+            "requirements.txt has changed since packages were installed. Run "
+            "INSTALL PACKAGES command again before starting the app."
         )
     for path in (source_dir, package_dir):
         value = str(path)
@@ -49,7 +49,7 @@ def start() -> None:
         from igh_merge.__main__ import main
     except ImportError as exc:
         raise RuntimeError(
-            "IGH-appen kunne ikke lastes. Kjør installasjonsskriptet på nytt."
+            "IGH app could not be loaded. Run installation script again."
         ) from exc
     main()
 

@@ -8,7 +8,7 @@ from .models import MergedRow
 def is_functional_group_candidate(
     rows: Sequence[MergedRow], result_index: int
 ) -> bool:
-    """Returner om Leader-raden følger appens foreløpige gule utvalg."""
+    """Return whether the Leader row follows the app's preliminary yellow selection."""
     leader = rows[result_index]
     source = leader.source
     if (

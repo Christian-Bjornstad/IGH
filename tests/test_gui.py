@@ -13,22 +13,23 @@ from igh_merge.service import MergeService
 from conftest import write_summary
 
 
-def test_gui_has_required_norwegian_tabs():
+def test_gui_has_required_tabs():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    labels = [window.tabs.tabText(index) for index in range(window.tabs.count())]
-    assert labels == [
-        "Kjøring",
-        "Kontroller",
-        "IMGT og ARResT",
-        "Eksport",
-        "Innstillinger",
+    # Check nav buttons instead of tabs (new sidebar navigation)
+    nav_labels = [btn.text() for btn in window.nav_buttons]
+    assert nav_labels == [
+        "Run",
+        "Controls",
+        "IMGT & ARResT",
+        "Export",
+        "Settings",
     ]
     assert window.export_button.isEnabled() is False
     assert window.send_imgt_button.isEnabled() is False
     assert window.send_arrest_button.isEnabled() is False
     assert window.highlight_excel_checkbox.text() == (
-        "Marker appens gule kandidatrader i Excel"
+        "Highlight app's yellow candidate rows in Excel"
     )
     assert window.highlight_excel_checkbox.isChecked() is False
     assert APP_ICON_PATH.is_file()
@@ -36,9 +37,9 @@ def test_gui_has_required_norwegian_tabs():
     assert window.windowIcon().isNull() is False
     assert window.minimumWidth() == 1040
     assert window.status_badge.property("tone") == "neutral"
-    assert window.status_badge.accessibleName() == "Programstatus"
+    assert window.status_badge.accessibleName() == "Application status"
     assert window.external_progress.isHidden() is True
-    assert window.external_progress.accessibleName() == "Ekstern analyse pågår"
+    assert window.external_progress.accessibleName() == "External analysis in progress"
     window.close()
     assert app is not None
 
@@ -138,7 +139,7 @@ def test_gui_yellow_selection_includes_low_leader_with_exact_fr1_support(
     window.result = MergeService().process(root, expected_samples=1)
     window._populate_result()
 
-    assert window.result.rows[1].comment == "(Støtter Leader-1)"
+    assert window.result.rows[1].comment == "(Supports Leader-1)"
     assert window.candidate_table.item(0, 0).checkState() == Qt.CheckState.Checked
     assert (
         window.candidate_table.item(0, 0).background().color().name().upper()

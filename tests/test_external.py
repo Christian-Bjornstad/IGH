@@ -283,8 +283,8 @@ def test_external_clients_explain_enterprise_tls_error(monkeypatch, client, serv
 
     message = str(caught.value)
     assert service in message
-    assert "Windows sitt sertifikatlager" in message
-    assert "INSTALLER PAKKER" in message
+    assert "Windows' certificate store" in message
+    assert "INSTALL PACKAGES" in message
     assert "Trusted Root Certification Authorities" in message
 
 

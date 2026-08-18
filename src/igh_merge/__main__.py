@@ -14,8 +14,8 @@ def main() -> int:
     owns_event_loop = app is None
     if app is None:
         app = QApplication(sys.argv)
-    app.setApplicationName("IGH Merge")
-    app.setApplicationDisplayName("IGH Merge")
+    app.setApplicationName("IGHV")
+    app.setApplicationDisplayName("IGHV")
     app.setWindowIcon(application_icon())
     window = MainWindow()
     _OPEN_WINDOWS.append(window)

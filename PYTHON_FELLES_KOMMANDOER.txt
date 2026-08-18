@@ -1,42 +1,42 @@
-IGH-APP - KOMMANDOER FOR PYTHON FELLES
+IGH-APP - COMMANDS FOR PYTHON COMMON
 
-Viktig:
-- Åpne Python Felles gjennom Ivanti/Workspace Control først.
-- Lim inn én hel kommandolinje og trykk Enter.
-- Ikke ta med >>>.
-- Installasjonen kjøres første gang og etter endringer i requirements.txt.
-- Etter denne TLS-oppdateringen må INSTALLER PAKKER kjøres én gang på nytt.
-- Startkommandoen brukes hver gang programmet skal åpnes.
+Important:
+- Open Python Common through Ivanti/Workspace Control first.
+- Paste one complete command line and press Enter.
+- Do not include >>>.
+- Installation runs first time and after changes to requirements.txt.
+- After this TLS update, INSTALL PACKAGES must be run once more.
+- Start command is used each time the program is opened.
 
-INSTALLER PAKKER
+INSTALL PACKAGES
 
 exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\install_python_felles_KDI.py", encoding="utf-8").read())
 
-START PROGRAMMET
+START PROGRAM
 
 exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\start_python_felles_KDI.py", encoding="utf-8").read())
 
-FILER SOM SKAL LIGGE I PROSJEKTMAPPEN
+FILES THAT SHOULD BE IN PROJECT FOLDER
 
 install_python_felles_KDI.py
 start_python_felles_KDI.py
 requirements.txt
 qt_app.py
-src-mappen
+src-folder
 
-MERKNADER
+NOTES
 
-Pakkene installeres i .python_felles_packages i prosjektmappen. Det kreves
-derfor ikke skrivetilgang til den sentrale Python-installasjonen.
+Packages are installed in .python_felles_packages in the project folder. Write
+access to the central Python installation is therefore not required.
 
-Appen bruker Windows sitt administrerte sertifikatlager ved kontakt med IMGT
-og ARResT. Sertifikatkontrollen er aktiv. Hvis en sertifikatfeil fortsatt vises
-etter ny installasjon, må IT kontrollere virksomhetens proxy-/Ivanti-
-rotsertifikat i Windows Trusted Root Certification Authorities.
+The app uses Windows' managed certificate store when contacting IMGT
+and ARResT. Certificate validation is active. If a certificate error still
+appears after a new installation, IT must check the organization's proxy-/Ivanti-
+root certificate in Windows Trusted Root Certification Authorities.
 
-Hvis jobbnettet ikke har tilgang til PyPI, kan IT eller en utviklings-PC legge
-Windows/Python 3.14-kompatible wheel-filer i en mappe kalt wheelhouse i
-prosjektmappen. Installasjonsskriptet bruker denne automatisk uten nettilgang.
+If the job network does not have access to PyPI, IT or a development PC can place
+Windows/Python 3.14-compatible wheel files in a folder called wheelhouse in
+the project folder. The installation script uses this automatically without network access.
 
-Vanlig BAT-fil eller Windows-snarvei brukes ikke. Python Felles åpnes først,
-og deretter limes kommandoen inn.
+Regular BAT file or Windows shortcut is not used. Python Common opens first,
+and then the command is pasted in.

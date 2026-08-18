@@ -10,16 +10,16 @@ from .service import MergeService
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Slå sammen lokale IGHV-SHM Leader/FR1-resultater")
-    parser.add_argument("run_folder", type=Path, help="Kjøringsmappe med Leader- og FR1-output")
-    parser.add_argument("--output", type=Path, help="Målfil. Standard: YYYY_MM_DD_merged.xlsx i kjøringsmappen")
+    parser = argparse.ArgumentParser(description="Merge local IGHV-SHM Leader/FR1 results")
+    parser.add_argument("run_folder", type=Path, help="Run folder with Leader and FR1 output")
+    parser.add_argument("--output", type=Path, help="Target file. Default: YYYY_MM_DD_merged.xlsx in run folder")
     parser.add_argument("--expected-samples", type=int, default=24)
     parser.add_argument("--allow-count-warning", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--highlight-yellow-rows",
         action="store_true",
-        help="Marker appens foreløpige gule Leader-kandidater i Excel",
+        help="Highlight app's preliminary yellow Leader candidates in Excel",
     )
     return parser
 
@@ -31,8 +31,8 @@ def main(argv: list[str] | None = None) -> int:
         result = service.process(args.run_folder, args.expected_samples)
         if result.manifest.warnings and not args.allow_count_warning:
             for warning in result.manifest.warnings:
-                print(f"VARSEL: {warning}", file=sys.stderr)
-            print("Bruk --allow-count-warning for å godkjenne avviket.", file=sys.stderr)
+                print(f"WARNING: {warning}", file=sys.stderr)
+            print("Use --allow-count-warning to accept the deviation.", file=sys.stderr)
             return 2
         output = args.output or (
             result.manifest.run_directory / f"{result.manifest.run_date}_merged.xlsx"
@@ -43,11 +43,11 @@ def main(argv: list[str] | None = None) -> int:
             overwrite=args.overwrite,
             highlight_functional_rows=args.highlight_yellow_rows,
         )
-        print(f"Skrev {len(result.rows)} rader til {written}")
-        print(f"Kontroller: {result.qc.error_count} feil.")
+        print(f"Wrote {len(result.rows)} rows to {written}")
+        print(f"Controls: {result.qc.error_count} errors.")
         return 0
     except (ValidationError, PrivacyError, FileExistsError, OSError) as exc:
-        print(f"FEIL: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
 
