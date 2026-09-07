@@ -13,6 +13,7 @@ from .models import MergedRow
 from .privacy import ensure_outside_git
 
 HEADERS = (
+    "External ID",
     "Rank",
     "Sequence",
     "Length",
@@ -26,14 +27,15 @@ HEADERS = (
     "No Stop codon (Y/N)",
     "V-coverage",
     "CDR3 Seq",
-    "Identitet til VH",
+    "Identity to VH",
     "Sample",
     "Reads",
     "Target",
-    "Dato PCR-oppsett",
+    "Molecule",
+    "Date PCR setup",
     "find sequence in other samples",
     "Subset",
-    "Kommentar",
+    "Comment",
     "Fasta",
 )
 
@@ -63,6 +65,7 @@ class ExcelReportWriter:
             source = item.source
             worksheet.append(
                 [
+                    item.external_id,
                     source.rank,
                     source.sequence,
                     source.length,
@@ -76,10 +79,11 @@ class ExcelReportWriter:
                     source.no_stop_codon,
                     source.v_coverage,
                     source.cdr3_sequence,
-                    f'=IF(I{excel_row}="","",100-I{excel_row})',
+                    f'=IF(J{excel_row}="","",100-J{excel_row})',
                     item.sample,
                     item.total_reads,
                     item.target,
+                    item.molecule_type,
                     item.run_date,
                     item.other_samples,
                     item.subset,
@@ -119,7 +123,7 @@ class ExcelReportWriter:
 
         yellow_fill = PatternFill(fill_type="solid", fgColor="FFFF00")
         for result_index, row in enumerate(
-            worksheet.iter_rows(min_row=2, max_row=last_row, min_col=1, max_col=22)
+            worksheet.iter_rows(min_row=2, max_row=last_row, min_col=1, max_col=24)
         ):
             for cell in row:
                 cell.font = Font(name="Calibri", size=11, color="000000")
@@ -127,22 +131,23 @@ class ExcelReportWriter:
                 cell.border = border
                 if result_index in highlight_rows:
                     cell.fill = yellow_fill
-            row[14].font = Font(name="Calibri", size=11, bold=True, color="000000")
+            row[0].font = Font(name="Calibri", size=11, bold=True, color="1F2937")
+            row[15].font = Font(name="Calibri", size=11, bold=True, color="000000")
             # Keep compact rows as in reference file. FASTA content can
             # be read in formula bar without entire sequence blowing up row height.
-            row[21].alignment = Alignment(vertical="center", wrap_text=False)
+            row[23].alignment = Alignment(vertical="center", wrap_text=False)
 
-        for column in ("G", "H", "I", "L", "N"):
+        for column in ("H", "I", "J", "M", "O"):
             for cell in worksheet[f"{column}2:{column}{last_row}"]:
                 cell[0].number_format = "0.##"
-        for cell in worksheet[f"P2:P{last_row}"]:
+        for cell in worksheet[f"Q2:Q{last_row}"]:
             cell[0].number_format = "#,##0"
 
         green_font = Font(color="008000", bold=False)
         black_font = Font(color="000000", bold=False)
         bold_font = Font(color="000000", bold=True)
         red_font = Font(color="FF0000")
-        percent_range = f"G2:G{last_row}"
+        percent_range = f"H2:H{last_row}"
         worksheet.conditional_formatting.add(
             percent_range, CellIsRule(operator="greaterThanOrEqual", formula=["2.5"], font=bold_font)
         )
@@ -154,22 +159,22 @@ class ExcelReportWriter:
             percent_range, CellIsRule(operator="lessThan", formula=["2.4"], font=green_font)
         )
         worksheet.conditional_formatting.add(
-            f"J2:J{last_row}",
-            FormulaRule(formula=['OR(J2="N",J2="N/A")'], font=red_font),
-        )
-        worksheet.conditional_formatting.add(
             f"K2:K{last_row}",
             FormulaRule(formula=['OR(K2="N",K2="N/A")'], font=red_font),
         )
+        worksheet.conditional_formatting.add(
+            f"L2:L{last_row}",
+            FormulaRule(formula=['OR(L2="N",L2="N/A")'], font=red_font),
+        )
 
         widths = {
-            "A": 8, "B": 55, "C": 10, "D": 14, "E": 20, "F": 16,
-            "G": 14, "H": 14, "I": 30, "J": 16, "K": 20, "L": 13,
-            "M": 22, "N": 17, "O": 18, "P": 14, "Q": 11, "R": 18,
-            "S": 34, "T": 13, "U": 30, "V": 60,
+            "A": 16, "B": 8, "C": 55, "D": 10, "E": 14, "F": 20, "G": 16,
+            "H": 14, "I": 14, "J": 30, "K": 16, "L": 20, "M": 13,
+            "N": 22, "O": 17, "P": 18, "Q": 14, "R": 11, "S": 12,
+            "T": 18, "U": 34, "V": 13, "W": 30, "X": 60,
         }
         for column, width in widths.items():
             worksheet.column_dimensions[column].width = width
         worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = f"A1:V{last_row}"
+        worksheet.auto_filter.ref = f"A1:X{last_row}"
         worksheet.sheet_view.showGridLines = True

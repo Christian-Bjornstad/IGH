@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 Target = Literal["Leader", "FR1"]
+MoleculeType = Literal["gDNA", "cDNA"]
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class SampleFile:
     sample: str
     sample_number: int
     target: Target
+    molecule_type: MoleculeType
     total_reads: int
     rows: tuple[SourceRow, ...]
 
@@ -58,7 +60,9 @@ class MergedRow:
     sample_number: int
     total_reads: int
     target: Target
+    molecule_type: MoleculeType
     run_date: str
+    external_id: str = ""
     other_samples: str = ""
     subset: str = ""
     comment: str = ""

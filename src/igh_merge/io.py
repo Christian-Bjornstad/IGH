@@ -4,7 +4,7 @@ import csv
 import re
 from pathlib import Path
 
-from .models import RunManifest, SampleFile, SourceRow, Target
+from .models import MoleculeType, RunManifest, SampleFile, SourceRow, Target
 
 SOURCE_HEADERS = (
     "Rank",
@@ -127,9 +127,24 @@ class SummaryReader:
             sample=match.group("sample"),
             sample_number=int(match.group("number")),
             target=target,
+            molecule_type=detect_molecule_type(match.group("sample")),
             total_reads=total_reads,
             rows=tuple(rows),
         )
+
+
+def detect_molecule_type(sample: str) -> MoleculeType:
+    """Infer gDNA vs cDNA from the sample identifier.
+
+    A sample name like ``26OUM12345_cdna`` is treated as cDNA; anything else
+    is gDNA. The suffix is case-insensitive and must be a full token so that
+    patient IDs that merely contain "cd" stay gDNA.
+    """
+    if not sample:
+        return "gDNA"
+    if re.search(r"(?:^|_)(?:cDNA|cdna)(?:$|_)", sample, flags=re.IGNORECASE):
+        return "cDNA"
+    return "gDNA"
 
 
 class RunDiscovery:

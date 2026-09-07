@@ -26,7 +26,10 @@ from .models import MergedRow
 from .privacy import ensure_outside_git
 
 IMGT_URL = "https://www.imgt.org/IMGT_vquest/analysis"
-ARREST_URL = "https://bat.infspire.org/cgi-bin/arrest/assignsubsets_html.pl"
+# ARResT moved from bat.infspire.org (infspire) to station3.arrest.tools.
+# See https://station3.arrest.tools/subsets/ - response format is identical
+# to the previous AssignSubsets endpoint, so parser is unchanged.
+ARREST_URL = "https://station3.arrest.tools/cgi-bin/arrest/assignsubsets_html.pl"
 MAX_BATCH_SIZE = 50
 MAX_RESPONSE_BYTES = 25_000_000
 IUPAC_NUCLEOTIDES = frozenset("ACGTRYSWKMBDHVN")
@@ -66,6 +69,7 @@ class ExternalCandidate:
     row_index: int
     sample: str
     target: str
+    molecule_type: str
     rank: int
     sequence: str
     sequence_sha256: str
@@ -117,6 +121,7 @@ def create_external_batch(
                 row_index=row_index,
                 sample=row.sample,
                 target=row.target,
+                molecule_type=row.molecule_type,
                 rank=row.source.rank,
                 sequence=sequence,
                 sequence_sha256=sequence_sha256(sequence),
@@ -233,7 +238,7 @@ def _identity_percent(value: str | None) -> float | None:
 
 def _validate_response_size(content: bytes) -> None:
     if len(content) > MAX_RESPONSE_BYTES:
-        raise ExternalAnalysisError("Tjenesten returnerte en uventet stor respons")
+        raise ExternalAnalysisError("The service returned an unexpectedly large response")
 
 
 def _parse_parameters(text: str) -> dict[str, str]:
@@ -252,13 +257,13 @@ def _validate_ids(
     observed = list(observed_ids)
     expected = list(batch.candidate_ids)
     if len(observed) != len(set(observed)):
-        raise ExternalAnalysisError(f"{service} returnerte duplikate eksterne ID-er")
+        raise ExternalAnalysisError(f"{service} returned duplicate external IDs")
     if set(observed) != set(expected):
         missing = sorted(set(expected) - set(observed))
         extra = sorted(set(observed) - set(expected))
         raise ExternalAnalysisError(
-            f"{service}-resultatet matcher ikke batchen "
-            f"(mangler {len(missing)}, ekstra {len(extra)})"
+            f"{service} result does not match the batch "
+            f"(missing {len(missing)}, extra {len(extra)})"
         )
 
 
@@ -286,7 +291,7 @@ def parse_imgt_result(
     }
     if reader.fieldnames is None or not required.issubset(reader.fieldnames):
         missing = sorted(required - set(reader.fieldnames or ()))
-        raise ExternalAnalysisError(f"IMGT AIRR mangler kolonner: {', '.join(missing)}")
+        raise ExternalAnalysisError(f"IMGT AIRR is missing columns: {', '.join(missing)}")
 
     candidates = batch.by_id()
     records: list[ImgtRecord] = []
@@ -322,9 +327,9 @@ def parse_imgt_result(
     _validate_ids(observed_ids, batch, "IMGT")
     parameters = _parse_parameters(raw_parameters)
     if not parameters.get("IMGT/V-QUEST program version"):
-        raise ExternalAnalysisError("IMGT Parameters.txt mangler programversjon")
+        raise ExternalAnalysisError("IMGT Parameters.txt is missing the program version")
     if not parameters.get("IMGT/V-QUEST reference directory release"):
-        raise ExternalAnalysisError("IMGT Parameters.txt mangler referanserelease")
+        raise ExternalAnalysisError("IMGT Parameters.txt is missing the reference release")
     return ImgtBatchResult(parameters, tuple(records), raw_parameters, raw_airr)
 
 
@@ -350,7 +355,7 @@ def parse_imgt_full_result(
     required = {"1_Summary.txt", "5_AA-sequences.txt", "11_Parameters.txt"}
     if not required.issubset(raw_files):
         raise ExternalAnalysisError(
-            "IMGT-fullresultat mangler: " + ", ".join(sorted(required - raw_files.keys()))
+            "IMGT full result is missing: " + ", ".join(sorted(required - raw_files.keys()))
         )
     summaries = list(
         csv.DictReader(io.StringIO(raw_files["1_Summary.txt"]), delimiter="\t")
@@ -437,10 +442,19 @@ class ImgtClient:
         self.timeout = timeout
 
     def submit(self, batch: ExternalBatch) -> ImgtBatchResult:
+        molecule_types = {candidate.molecule_type for candidate in batch.candidates}
+        if not molecule_types:
+            raise ExternalAnalysisError("Batch has no candidates")
+        if len(molecule_types) > 1:
+            names = ", ".join(sorted(molecule_types))
+            raise ExternalAnalysisError(
+                f"IMGT submit must use a single molecule type per batch (got: {names})"
+            )
+        molecule_type = next(iter(molecule_types))
         data: dict[str, str] = {
             "species": "human",
             "receptorOrLocusType": "IGH",
-            "moleculeType": "Unknown",
+            "moleculeType": "cDNA" if molecule_type == "cDNA" else "gDNA",
             "inputType": "inline",
             "sequences": batch.fasta,
             "resultType": "excel",
@@ -487,7 +501,7 @@ class ImgtClient:
             message = re.sub(r"<[^>]+>", " ", response.text)
             message = " ".join(message.split())[:500]
             raise ExternalAnalysisError(
-                f"IMGT svarte ikke med et gyldig AIRR-arkiv: {message}"
+                f"IMGT did not return a valid AIRR archive: {message}"
             ) from exc
         return parse_imgt_full_result(raw_files, batch)
 
@@ -513,10 +527,10 @@ def parse_arrest_result(
 ) -> ArrestBatchResult:
     rows = list(csv.reader(io.StringIO(raw_tsv), delimiter="\t"))
     if not rows:
-        raise ExternalAnalysisError("ARResT-resultatet er tomt")
+        raise ExternalAnalysisError("ARResT result is empty")
     header = [cell.lstrip("# ").strip() for cell in rows[0]]
     if len(header) < 17 or "label of your sequence" not in header[0].lower():
-        raise ExternalAnalysisError("ARResT-resultatet har ukjent header")
+        raise ExternalAnalysisError("ARResT result has an unknown header")
 
     candidates = batch.by_id()
     records: list[ArrestRecord] = []
@@ -586,11 +600,16 @@ class ArrestClient:
         if len(parser.tsv_links) != 1:
             plain = " ".join(re.sub(r"<[^>]+>", " ", response.text).split())[:500]
             raise ExternalAnalysisError(
-                f"ARResT svarte uten en entydig resultatfil: {plain}"
+                f"ARResT did not return a unique result file: {plain}"
             )
         results_url = urljoin(response.url, parser.tsv_links[0])
-        if urlparse(results_url).hostname != "bat.infspire.org":
-            raise ExternalAnalysisError("ARResT returnerte en resultatlenke til ukjent domene")
+        if urlparse(results_url).hostname not in {
+            "bat.infspire.org",
+            "station3.arrest.tools",
+        }:
+            raise ExternalAnalysisError(
+                "ARResT returned a result link to an unknown domain"
+            )
         try:
             result_response = requests.get(results_url, timeout=self.timeout)
             result_response.raise_for_status()
@@ -744,6 +763,7 @@ def apply_imgt_result(
     for record in result.records:
         candidate = candidates[record.external_id]
         row = rows[candidate.row_index]
+        row.external_id = record.external_id
         subset = _subset_number(record.cll_subset)
         if subset:
             row.subset = subset
@@ -752,9 +772,9 @@ def apply_imgt_result(
             if record.productive is True
             else "not productive"
             if record.productive is False
-            else "ukjent funksjonalitet"
+            else "unknown functionality"
         )
-        version = result.program_version or "ukjent versjon"
+        version = result.program_version or "unknown version"
         details = f"IMGT {version}: {functionality}"
         if record.d_call:
             details += f"; D={record.d_call}"
@@ -770,6 +790,7 @@ def apply_arrest_result(
     for record in result.records:
         candidate = candidates[record.external_id]
         row = rows[candidate.row_index]
+        row.external_id = record.external_id
         subset = _subset_number(record.subset)
         if subset:
             if row.subset and subset not in {
@@ -778,7 +799,7 @@ def apply_arrest_result(
                 row.subset = f"{row.subset} / {subset}"
             elif not row.subset:
                 row.subset = subset
-        label = record.subset or "ukjent"
+        label = record.subset or "unknown"
         details = f"ARResT: {label}"
         if record.confidence:
             details += f", {record.confidence}"

@@ -50,6 +50,13 @@ from .external import (
     save_batch_mapping,
     save_imgt_result,
 )
+from .edge_cdp import (
+    IMGT_SCREENSHOT_SECTIONS,
+    EdgeCdpError,
+    EdgeCdpTimeout,
+    edge_cdp_available,
+    imgt_search_url,
+)
 from .candidates import is_functional_group_candidate
 from .io import ValidationError
 from .models import MergeResult, QcItem
@@ -59,24 +66,25 @@ from .service import MergeService
 
 
 class Palette:
-    ink = "#0F172A"
-    muted = "#475569"
-    panel = "#FFFFFF"
-    app_bg = "#F8FAFC"
-    subtle = "#F1F5F9"
-    border = "#CBD5E1"
-    navy = "#1E3A5F"
-    blue = "#2563EB"
-    blue_hover = "#1D4ED8"
-    green = "#15803D"
-    red = "#B91C1C"
-    amber = "#B45309"
-    pale_blue = "#EFF6FF"
-    pale_green = "#F0FDF4"
-    pale_red = "#FEF2F2"
-    pale_amber = "#FFFBEB"
-    functional_yellow = "#FFFF00"
-    excluded_gray = "#D9D9D9"
+    # Pastel lilac / cool gray palette — designed for long review sessions.
+    ink = "#2A2438"               # body text
+    muted = "#6B6480"             # secondary text
+    panel = "#FFFFFF"             # card / panel background
+    app_bg = "#F6F4FA"            # page background — very soft lilac tint
+    subtle = "#EFEBF5"            # hover surface
+    border = "#D9D2E8"            # soft lilac-gray border
+    accent = "#7C5CB4"            # primary action / selected nav
+    accent_hover = "#6A4DA0"      # hover
+    accent_soft = "#EDE5F8"       # selected nav surface
+    success = "#4F7C5A"
+    error = "#A04848"
+    amber = "#B07A2A"
+    pale_accent = "#F2EBFB"
+    pale_success = "#EEF6EF"
+    pale_error = "#FBEEEC"
+    pale_amber = "#FBF3E2"
+    functional_yellow = "#FFFF00"  # exact match required by highlight_rules.txt
+    excluded_gray = "#D9D9D9"      # kept neutral; do not theme
 
 
 APP_ICON_PATH = Path(__file__).resolve().parent / "assets" / "igh-merge-icon.ico"
@@ -295,9 +303,9 @@ class MainWindow(QMainWindow):
         # Metric cards
         cards = QHBoxLayout()
         cards.setSpacing(16)
-        self.row_card = MetricCard("Merged rows", "Leader + FR1", Palette.navy)
-        self.control_card = MetricCard("Control errors", "Requires follow-up", Palette.red)
-        self.support_card = MetricCard("FR1 support", "Exact overlaps", Palette.green)
+        self.row_card = MetricCard("Merged rows", "Leader + FR1", Palette.accent_hover)
+        self.control_card = MetricCard("Control errors", "Requires follow-up", Palette.error)
+        self.support_card = MetricCard("FR1 support", "Exact overlaps", Palette.success)
         for card in (self.row_card, self.control_card, self.support_card):
             cards.addWidget(card)
         content_layout.addLayout(cards)
@@ -403,11 +411,12 @@ class MainWindow(QMainWindow):
         information.setWordWrap(True)
         layout.addWidget(information)
 
-        self.candidate_table = QTableWidget(0, 10)
+        self.candidate_table = QTableWidget(0, 11)
         self.candidate_table.setHorizontalHeaderLabels(
             [
                 "Select",
                 "External ID",
+                "Molecule",
                 "Sample (local only)",
                 "Target",
                 "Rank",
@@ -421,8 +430,8 @@ class MainWindow(QMainWindow):
         self._configure_table(self.candidate_table)
         candidate_header = self.candidate_table.horizontalHeader()
         candidate_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        candidate_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        candidate_header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
+        candidate_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        candidate_header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
         candidate_header.setMinimumSectionSize(58)
         self.candidate_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -454,6 +463,13 @@ class MainWindow(QMainWindow):
         self.send_arrest_button.setObjectName("PrimaryButton")
         self.send_arrest_button.setEnabled(False)
         self.send_arrest_button.clicked.connect(self._send_arrest)
+        self.capture_button = QPushButton("Capture IMGT evidence (Edge)")
+        self.capture_button.setToolTip(
+            "Open Microsoft Edge with the IGHV profile and capture IMGT result-page "
+            "screenshots (sections 1-6 and 9) for the selected Leader candidates."
+        )
+        self.capture_button.setEnabled(False)
+        self.capture_button.clicked.connect(self._capture_imgt_evidence)
         self.report_button = QPushButton("Generate report draft")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
@@ -464,7 +480,8 @@ class MainWindow(QMainWindow):
         action_grid.addWidget(external_label, 1, 0)
         action_grid.addWidget(self.send_imgt_button, 1, 1)
         action_grid.addWidget(self.send_arrest_button, 1, 2)
-        action_grid.addWidget(self.report_button, 1, 3)
+        action_grid.addWidget(self.capture_button, 1, 3)
+        action_grid.addWidget(self.report_button, 2, 1)
         action_grid.setColumnStretch(4, 1)
         layout.addWidget(action_bar)
 
@@ -686,9 +703,9 @@ class MainWindow(QMainWindow):
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(str(value))
                 if item.status == "FEIL":
-                    cell.setBackground(QColor(Palette.pale_red))
+                    cell.setBackground(QColor(Palette.pale_error))
                 else:
-                    cell.setBackground(QColor(Palette.pale_green))
+                    cell.setBackground(QColor(Palette.pale_success))
                 self.control_table.setItem(row, column, cell)
 
     def _fill_candidates(self) -> None:
@@ -711,6 +728,7 @@ class MainWindow(QMainWindow):
             self.candidate_table.setItem(row, 0, check)
             values = [
                 "",
+                item.molecule_type,
                 item.sample,
                 item.target,
                 item.source.rank,
@@ -960,6 +978,106 @@ class MainWindow(QMainWindow):
         self._external_worker = None
         self._external_thread = None
 
+    def _capture_imgt_evidence(self) -> None:
+        """Open a managed Edge instance and capture IMGT result screenshots.
+
+        The user wants the IMGT result page screenshotted for sections 1-6
+        and 9. The page only appears after the user manually pastes the
+        pseudonymized FASTA into IMGT (we never submit patient data here),
+        so the workflow is: open Edge to the IMGT search page for the
+        correct molecule type, ask the user to paste + submit, then walk
+        through the numbered sections and save PNGs into
+        ``<run>/<date>_imgt_evidence/<external_id>/``.
+        """
+        if not self.imgt_result or not self.result:
+            QMessageBox.warning(
+                self,
+                "IMGT evidence",
+                "Run IMGT first — the capture uses the IMGT external IDs.",
+            )
+            return
+        if not edge_cdp_available():
+            QMessageBox.critical(
+                self,
+                "Edge not available",
+                "Microsoft Edge or the websocket-client dependency is missing. "
+                "Ask IT to expose the managed Edge installation before using "
+                "IMGT evidence capture.",
+            )
+            return
+        run_dir = self.result.manifest.run_directory
+        evidence_dir = run_dir / f"{self.result.manifest.run_date}_imgt_evidence"
+        try:
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.critical(self, "Cannot create evidence folder", str(exc))
+            return
+        # Group by molecule type so we open the right IMGT form per group.
+        by_molecule: dict[str, list[ImgtRecord]] = {}
+        for record in self.imgt_result.records:
+            by_molecule.setdefault(
+                "cDNA" if self._molecule_for(record.external_id) == "cDNA"
+                else "gDNA",
+                [],
+            ).append(record)
+        QMessageBox.information(
+            self,
+            "Edge will open",
+            "Microsoft Edge will open. Paste the pseudonymized FASTA into "
+            "IMGT/V-QUEST and submit, then return here. When the result page "
+            "is fully loaded, click OK to start capturing sections "
+            + ", ".join(str(n) for n in IMGT_SCREENSHOT_SECTIONS)
+            + ".",
+        )
+        self._set_status("IMGT evidence capture in progress", "busy")
+        try:
+            from .edge_cdp import launch_edge
+            with launch_edge(
+                evidence_dir / "edge-profile",
+                background=False,
+            ) as session:
+                page = session.page
+                for molecule_type, records in by_molecule.items():
+                    page.navigate(
+                        imgt_search_url("placeholder", molecule_type=molecule_type),
+                        timeout_s=60.0,
+                    )
+                    captured: list[Path] = []
+                    for record in records:
+                        sample_dir = evidence_dir / record.external_id
+                        sample_dir.mkdir(parents=True, exist_ok=True)
+                        # Full-page screenshot of the result page.
+                        page.capture_full_page(
+                            sample_dir / f"{record.external_id}_full.png"
+                        )
+                        # Per-section clipped screenshots.
+                        for section in IMGT_SCREENSHOT_SECTIONS:
+                            selector = f"a[name='{section}']"
+                            result_path = sample_dir / (
+                                f"section_{section}.png"
+                            )
+                            page.capture_element(selector, result_path)
+                            if result_path.exists():
+                                captured.append(result_path)
+                    self.external_status.setText(
+                        f"Captured {len(captured)} IMGT screenshots "
+                        f"for {len(records)} {molecule_type} sequences "
+                        f"in {evidence_dir}."
+                    )
+        except (EdgeCdpError, EdgeCdpTimeout, OSError) as exc:
+            self._set_status("IMGT capture failed", "error")
+            QMessageBox.critical(self, "IMGT evidence failed", str(exc))
+            return
+        self._set_status("IMGT evidence captured", "success")
+
+    def _molecule_for(self, external_id: str) -> str:
+        if not self.external_batch:
+            return "gDNA"
+        for candidate in self.external_batch.candidates:
+            if candidate.external_id == external_id:
+                return candidate.molecule_type
+        return "gDNA"
+
     def _refresh_external_table(self) -> None:
         if not self.result:
             return
@@ -980,7 +1098,7 @@ class MainWindow(QMainWindow):
                 6: self._imgt_status_by_row.get(result_index, ""),
                 7: self._arrest_status_by_row.get(result_index, ""),
                 8: self.result.rows[result_index].subset,
-                9: self.result.rows[result_index].comment,
+                10: self.result.rows[result_index].comment,
             }
             for column, value in values.items():
                 self.candidate_table.item(table_row, column).setText(value)
@@ -1088,12 +1206,12 @@ class MainWindow(QMainWindow):
                 border-right: 1px solid {Palette.border};
             }}
             QLabel#SidebarBrandIcon {{
-                background: {Palette.pale_blue};
-                border: 1px solid #BFDBFE;
+                background: {Palette.pale_accent};
+                border: 1px solid #C9B8E8;
                 border-radius: 8px;
             }}
             QLabel#SidebarAppTitle {{
-                color: {Palette.navy};
+                color: {Palette.accent_hover};
                 font-family: "Segoe UI";
                 font-size: 16pt;
                 font-weight: 700;
@@ -1114,19 +1232,19 @@ class MainWindow(QMainWindow):
                 font-size: 10pt;
             }}
             QPushButton#NavButton:hover {{
-                background: {Palette.pale_blue};
-                color: {Palette.blue};
+                background: {Palette.pale_accent};
+                color: {Palette.accent};
             }}
             QPushButton#NavButton:checked {{
-                background: {Palette.blue};
+                background: {Palette.accent};
                 color: white;
             }}
             QPushButton#NavButton:checked:hover {{
-                background: {Palette.blue_hover};
+                background: {Palette.accent_hover};
             }}
             QLabel#SidebarStatusBadge {{
                 background: {Palette.subtle};
-                color: {Palette.navy};
+                color: {Palette.accent_hover};
                 border: 1px solid {Palette.border};
                 border-radius: 8px;
                 padding: 6px 12px;
@@ -1134,13 +1252,13 @@ class MainWindow(QMainWindow):
                 font-size: 9pt;
             }}
             QLabel#SidebarStatusBadge[tone="busy"] {{
-                background: {Palette.pale_blue}; color: {Palette.blue}; border-color: #BFDBFE;
+                background: {Palette.pale_accent}; color: {Palette.accent}; border-color: #C9B8E8;
             }}
             QLabel#SidebarStatusBadge[tone="success"] {{
-                background: {Palette.pale_green}; color: {Palette.green}; border-color: #BBF7D0;
+                background: {Palette.pale_success}; color: {Palette.success}; border-color: #CFE4D4;
             }}
             QLabel#SidebarStatusBadge[tone="error"] {{
-                background: {Palette.pale_red}; color: {Palette.red}; border-color: #FECACA;
+                background: {Palette.pale_error}; color: {Palette.error}; border-color: #EFCBC9;
             }}
             QLabel#SidebarVersion {{
                 color: {Palette.muted};
@@ -1148,9 +1266,9 @@ class MainWindow(QMainWindow):
             }}
 
             QLabel#PrivacyBadge {{
-                background: {Palette.pale_green};
-                color: {Palette.green};
-                border: 1px solid #BBF7D0;
+                background: {Palette.pale_success};
+                color: {Palette.success};
+                border: 1px solid #CFE4D4;
                 border-radius: 8px;
                 padding: 6px 12px;
                 font-size: 8pt;
@@ -1169,9 +1287,9 @@ class MainWindow(QMainWindow):
                 padding: 11px 13px;
             }}
             QLabel#PageIntro {{
-                background: {Palette.pale_blue};
-                color: {Palette.navy};
-                border: 1px solid #BFDBFE;
+                background: {Palette.pale_accent};
+                color: {Palette.accent_hover};
+                border: 1px solid #C9B8E8;
                 font-weight: 600;
             }}
             QLabel#InfoCallout, QLabel#StatusCallout {{
@@ -1180,9 +1298,9 @@ class MainWindow(QMainWindow):
                 border: 1px solid {Palette.border};
             }}
             QLabel#PrivacyCallout {{
-                background: {Palette.pale_green};
-                color: #166534;
-                border: 1px solid #BBF7D0;
+                background: {Palette.pale_success};
+                color: #3F6B4D;
+                border: 1px solid #CFE4D4;
                 font-weight: 600;
             }}
 
@@ -1193,7 +1311,7 @@ class MainWindow(QMainWindow):
                 margin-top: 12px;
                 padding: 16px 14px 14px 14px;
                 font-weight: 700;
-                color: {Palette.navy};
+                color: {Palette.accent_hover};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
@@ -1218,48 +1336,48 @@ class MainWindow(QMainWindow):
                 border: 1px solid {Palette.border};
                 border-radius: 7px;
                 padding: 8px 10px;
-                selection-background-color: {Palette.blue};
+                selection-background-color: {Palette.accent};
                 min-height: 20px;
             }}
-            QLineEdit:hover, QSpinBox:hover, QPlainTextEdit:hover {{ border-color: #94A3B8; }}
+            QLineEdit:hover, QSpinBox:hover, QPlainTextEdit:hover {{ border-color: #A89ABF; }}
             QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus {{
-                border: 2px solid {Palette.blue};
+                border: 2px solid {Palette.accent};
                 padding: 7px 9px;
             }}
 
             QPushButton {{
                 background: {Palette.panel};
-                color: {Palette.navy};
+                color: {Palette.accent_hover};
                 border: 1px solid {Palette.border};
                 border-radius: 7px;
                 padding: 8px 13px;
                 min-height: 20px;
                 font-weight: 600;
             }}
-            QPushButton:hover {{ background: {Palette.pale_blue}; border-color: #93C5FD; color: {Palette.blue_hover}; }}
-            QPushButton:pressed {{ background: #DBEAFE; border-color: {Palette.blue}; }}
-            QPushButton:focus {{ border: 2px solid {Palette.blue}; padding: 7px 12px; }}
+            QPushButton:hover {{ background: {Palette.pale_accent}; border-color: #B49BD9; color: {Palette.accent_hover}; }}
+            QPushButton:pressed {{ background: #E5DAF3; border-color: {Palette.accent}; }}
+            QPushButton:focus {{ border: 2px solid {Palette.accent}; padding: 7px 12px; }}
             QPushButton#PrimaryButton {{
-                background: {Palette.blue};
+                background: {Palette.accent};
                 color: white;
-                border-color: {Palette.blue};
+                border-color: {Palette.accent};
                 font-weight: 700;
             }}
-            QPushButton#PrimaryButton:hover {{ background: {Palette.blue_hover}; border-color: {Palette.blue_hover}; color: white; }}
-            QPushButton#PrimaryButton:pressed {{ background: {Palette.navy}; }}
+            QPushButton#PrimaryButton:hover {{ background: {Palette.accent_hover}; border-color: {Palette.accent_hover}; color: white; }}
+            QPushButton#PrimaryButton:pressed {{ background: {Palette.accent_hover}; }}
             QPushButton:disabled {{
-                color: #94A3B8;
-                background: #E2E8F0;
-                border-color: #E2E8F0;
+                color: #A89ABF;
+                background: #E6E1EF;
+                border-color: #E6E1EF;
             }}
 
             QCheckBox {{ color: {Palette.ink}; spacing: 8px; padding: 4px 0; }}
             QCheckBox::indicator {{ width: 18px; height: 18px; }}
             QCheckBox::indicator:unchecked {{
-                background: white; border: 1px solid #94A3B8; border-radius: 4px;
+                background: white; border: 1px solid #A89ABF; border-radius: 4px;
             }}
             QCheckBox::indicator:checked {{
-                background: {Palette.blue}; border: 1px solid {Palette.blue}; border-radius: 4px;
+                background: {Palette.accent}; border: 1px solid {Palette.accent}; border-radius: 4px;
             }}
 
             QTableWidget {{
@@ -1268,27 +1386,27 @@ class MainWindow(QMainWindow):
                 border: 1px solid {Palette.border};
                 border-radius: 8px;
                 gridline-color: transparent;
-                selection-background-color: #DBEAFE;
+                selection-background-color: #E5DAF3;
                 selection-color: {Palette.ink};
             }}
-            QTableWidget:focus {{ border: 2px solid {Palette.blue}; }}
+            QTableWidget:focus {{ border: 2px solid {Palette.accent}; }}
             QHeaderView::section {{
-                background: {Palette.navy};
+                background: {Palette.accent_hover};
                 color: white;
                 padding: 8px 7px;
                 border: 0;
-                border-right: 1px solid #345575;
+                border-right: 1px solid #5A4787;
                 font-weight: 700;
             }}
-            QTableCornerButton::section {{ background: {Palette.navy}; border: 0; }}
+            QTableCornerButton::section {{ background: {Palette.accent_hover}; border: 0; }}
 
             QStackedWidget#PageStack {{
                 background: transparent;
                 border: none;
             }}
 
-            QProgressBar {{ background: #DBEAFE; border: 0; border-radius: 2px; }}
-            QProgressBar::chunk {{ background: {Palette.blue}; border-radius: 2px; }}
+            QProgressBar {{ background: #E5DAF3; border: 0; border-radius: 2px; }}
+            QProgressBar::chunk {{ background: {Palette.accent}; border-radius: 2px; }}
 
             QLabel#FooterText {{
                 color: {Palette.muted};
@@ -1296,7 +1414,7 @@ class MainWindow(QMainWindow):
             }}
 
             QToolTip {{
-                background: {Palette.navy}; color: white; border: 0; padding: 6px;
+                background: {Palette.accent_hover}; color: white; border: 0; padding: 6px;
             }}
             """
         )

@@ -28,6 +28,7 @@ class MergeService:
                 sample_number=sample_file.sample_number,
                 total_reads=sample_file.total_reads,
                 target=sample_file.target,
+                molecule_type=sample_file.molecule_type,
                 run_date=manifest.run_date,
             )
             for sample_file in manifest.sample_files

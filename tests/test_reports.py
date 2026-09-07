@@ -31,6 +31,6 @@ def test_generates_local_pdf_report_package(tmp_path):
     directory = generate_clinical_report_package(
         tmp_path, [merged_row()], batch, imgt
     )
-    pdf = directory / "SYN_LOCAL_ONLY_IGHV_rapportutkast.pdf"
+    pdf = directory / "SYN_LOCAL_ONLY_IGHV_report_draft.pdf"
     assert pdf.exists() and pdf.stat().st_size > 1_000
-    assert (directory / "rapportdata.audit.json").exists()
+    assert (directory / "report_data.audit.json").exists()

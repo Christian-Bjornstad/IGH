@@ -34,6 +34,7 @@ def candidate_batch(sequence: str = SEQUENCE) -> ExternalBatch:
         row_index=0,
         sample="SYN_LOCAL_ONLY",
         target="Leader",
+        molecule_type="gDNA",
         rank=1,
         sequence=sequence,
         sequence_sha256=sequence_sha256(sequence),
@@ -62,7 +63,7 @@ def merged_row(sequence: str = SEQUENCE) -> MergedRow:
         v_coverage=100.0,
         cdr3_sequence="CARDR",
     )
-    return MergedRow(source, "SYN_LOCAL_ONLY", 1, 100_000, "Leader", "2099_01_02")
+    return MergedRow(source, "SYN_LOCAL_ONLY", 1, 100_000, "Leader", "gDNA", "2099_01_02")
 
 
 def imgt_text(sequence: str = SEQUENCE) -> tuple[str, str]:

@@ -45,7 +45,7 @@ def test_merge_orders_samples_and_targets_and_adds_annotations(run_factory, make
         ("SYN_B", "FR1"),
     ]
     syn_b_fr1 = next(row for row in result.rows if row.sample == "SYN_B" and row.target == "FR1")
-    assert syn_b_fr1.comment == "Støtter Leader-1 og Leader-2"
+    assert syn_b_fr1.comment == "Supports Leader-1 and Leader-2"
     syn_a_leader = next(row for row in result.rows if row.sample == "SYN_A" and row.target == "Leader")
     assert "SYN_B_1_FR1" in syn_a_leader.other_samples
     assert syn_a_leader.fasta.startswith(">SYN_A-Leader-1\n")
@@ -104,7 +104,7 @@ def test_support_requires_one_functional_target_above_threshold(
     result = MergeService().process(root, expected_samples=1)
     fr1_rows = [row for row in result.rows if row.target == "FR1"]
 
-    assert fr1_rows[0].comment == "(Støtter Leader-1); (Støtter Leader-2)"
+    assert fr1_rows[0].comment == "(Supports Leader-1); (Supports Leader-2)"
     assert fr1_rows[1].comment == ""
 
 
@@ -146,8 +146,8 @@ def test_detects_selected_leader_variants_without_grouping_low_noise(
     leader_rows = [row for row in result.rows if row.target == "Leader"]
 
     assert leader_rows[0].comment == ""
-    assert leader_rows[1].comment == "Variant av Leader-1"
-    assert leader_rows[2].comment == "Variant av Leader-1"
+    assert leader_rows[1].comment == "Variant of Leader-1"
+    assert leader_rows[2].comment == "Variant of Leader-1"
     assert leader_rows[3].comment == ""
 
 
@@ -169,14 +169,14 @@ def test_support_uses_strongest_duplicate_leader_sequence(run_factory, make_row)
     leader_rows = [row for row in result.rows if row.target == "Leader"]
     fr1_row = next(row for row in result.rows if row.target == "FR1")
 
-    assert fr1_row.comment == "Støtter Leader-1"
+    assert fr1_row.comment == "Supports Leader-1"
     assert leader_rows[1].comment == ""
 
 
 def test_missing_pair_blocks_processing(run_factory, make_row):
     root, leader, _ = run_factory()
     write_summary(leader, "SYN_A", 1, [make_row(1, "A" * 100)])
-    with pytest.raises(ValidationError, match="mangler FR1"):
+    with pytest.raises(ValidationError, match="missing FR1"):
         RunDiscovery().discover(root, expected_samples=1)
 
 
@@ -186,7 +186,7 @@ def test_duplicate_sample_target_blocks_processing(run_factory, make_row):
     write_summary(leader, "SYN_A", 1, rows, lane=1)
     write_summary(leader, "SYN_A", 1, rows, lane=2)
     write_summary(fr1, "SYN_A", 1, rows)
-    with pytest.raises(ValidationError, match="Duplikat"):
+    with pytest.raises(ValidationError, match="Duplicate"):
         RunDiscovery().discover(root, expected_samples=1)
 
 
@@ -205,4 +205,4 @@ def test_count_difference_is_warning_when_pairs_are_complete(run_factory, make_r
     write_summary(leader, "SYN_A", 1, [make_row(1, "A" * 100)])
     write_summary(fr1, "SYN_A", 1, [make_row(1, "A" * 90)])
     manifest = RunDiscovery().discover(root, expected_samples=24)
-    assert manifest.warnings == ("Forventet 24 prøver per target, fant 1",)
+    assert manifest.warnings == ("Expected 24 samples per target, found 1",)

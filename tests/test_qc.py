@@ -38,6 +38,7 @@ def merged(
         1,
         reads,
         target,
+        "gDNA",
         "2099_01_02",
     )
 
