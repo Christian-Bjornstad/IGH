@@ -51,6 +51,33 @@ def test_merge_orders_samples_and_targets_and_adds_annotations(run_factory, make
     assert syn_a_leader.fasta.startswith(">SYN_A-Leader-1\n")
 
 
+def test_merge_places_controls_first_in_required_order(run_factory, make_row):
+    root, leader, fr1 = run_factory()
+    samples = [
+        ("SYN_PATIENT", 1),
+        ("NK", 2),
+        ("IGH_POS", 3),
+        ("NGS_NEG", 4),
+        ("IGH_SHM_POS", 5),
+    ]
+    for sample, number in samples:
+        write_summary(leader, sample, number, [make_row(1, "ACGT" * 30)])
+        write_summary(fr1, sample, number, [make_row(1, "TGCA" * 30)])
+
+    result = MergeService().process(root, expected_samples=5)
+
+    assert [
+        item.sample
+        for item in result.manifest.sample_files
+        if item.target == "Leader"
+    ] == ["IGH_SHM_POS", "IGH_POS", "NGS_NEG", "NK", "SYN_PATIENT"]
+    assert [
+        row.sample
+        for row in result.rows
+        if row.target == "Leader"
+    ] == ["IGH_SHM_POS", "IGH_POS", "NGS_NEG", "NK", "SYN_PATIENT"]
+
+
 def test_possible_near_match_is_not_annotated(run_factory, make_row):
     root, leader, fr1 = run_factory()
     write_summary(

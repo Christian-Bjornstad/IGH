@@ -6,7 +6,7 @@ from .candidates import functional_group_candidate_indices
 from .excel import ExcelReportWriter
 from .io import RunDiscovery
 from .matching import annotate_exact_matches
-from .models import MergeResult, MergedRow
+from .models import MergeResult, MergedRow, merged_row_sort_key
 from .qc import evaluate_qc
 
 
@@ -34,6 +34,7 @@ class MergeService:
             for sample_file in manifest.sample_files
             for source in sample_file.rows
         ]
+        rows.sort(key=merged_row_sort_key)
         annotate_exact_matches(rows)
         qc = evaluate_qc(rows)
         return MergeResult(manifest, tuple(rows), qc)

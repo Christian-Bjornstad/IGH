@@ -7,6 +7,30 @@ from typing import Literal
 Target = Literal["Leader", "FR1"]
 MoleculeType = Literal["gDNA", "cDNA"]
 
+CONTROL_SAMPLE_ORDER: tuple[str, ...] = (
+    "IGH_SHM_POS",
+    "IGH_POS",
+    "NGS_NEG",
+    "NK",
+)
+_CONTROL_PRIORITY = {sample: index for index, sample in enumerate(CONTROL_SAMPLE_ORDER)}
+
+
+def sample_sort_key(sample: str, sample_number: int) -> tuple[int, int, int]:
+    """Place controls first in the laboratory-defined order.
+
+    Patient samples retain their numeric input/run order after the controls.
+    """
+    priority = _CONTROL_PRIORITY.get(sample)
+    if priority is not None:
+        return (0, priority, sample_number)
+    return (1, sample_number, 0)
+
+
+def merged_row_sort_key(row: "MergedRow") -> tuple[int, int, int, int, int]:
+    sample_key = sample_sort_key(row.sample, row.sample_number)
+    return (*sample_key, 0 if row.target == "Leader" else 1, row.source.rank)
+
 
 @dataclass(frozen=True)
 class SourceRow:

@@ -168,17 +168,28 @@ def test_edge_cdp_available_returns_bool() -> None:
     assert isinstance(result, bool)
 
 
-def test_imgt_screenshot_specs_match_current_detailed_dom() -> None:
+def test_imgt_screenshot_specs_match_requested_summary_1_to_6_and_9() -> None:
     by_key = {spec.key: spec for spec in IMGT_SCREENSHOT_SPECS}
-    assert by_key["00_summary"].start_selector == "h3.sequence_title"
+    assert tuple(by_key) == (
+        "00_summary",
+        "01_v_gene",
+        "02_d_gene",
+        "03_j_gene",
+        "04_leader",
+        "05_constant",
+        "06_junction",
+        "09_v_region_translation",
+    )
+    # The summary crop starts at the yellow Result summary table and includes
+    # the following warning list (including an IMGT '(a)' ambiguity warning).
+    assert by_key["00_summary"].start_selector == "table.result_summary"
+    assert by_key["00_summary"].end_selector == "h4#sequence1_alv"
     assert by_key["01_v_gene"].start_selector == "h4#sequence1_alv"
     assert by_key["03_j_gene"].start_selector == "h4#sequence1_alj"
     assert by_key["04_leader"].optional is True
     assert by_key["05_constant"].start_selector == "h4#sequence1_alC"
     assert by_key["06_junction"].start_selector == "h4#sequence1_junction"
     assert by_key["09_v_region_translation"].start_selector == "h4#sequence1_section7"
-    assert by_key["11_mutation_table"].start_selector == "h4#sequence1_section9"
-    assert by_key["12_mutation_statistics"].start_selector == "h4#sequence1_section10"
 
 
 class _FakeImgtPage:
@@ -250,8 +261,9 @@ def test_capture_imgt_evidence_writes_named_crops(tmp_path: Path) -> None:
     assert "01_v_gene.png" in names
     assert "06_junction.png" in names
     assert "09_v_region_translation.png" in names
-    assert "11_mutation_table.png" in names
-    assert "12_mutation_statistics.png" in names
+    assert "08_v_region_alignment.png" not in names
+    assert "11_mutation_table.png" not in names
+    assert "12_mutation_statistics.png" not in names
     assert "99_full_page.png" not in names
 
 

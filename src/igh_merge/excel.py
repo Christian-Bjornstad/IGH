@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from .models import MergedRow
+from .models import MergedRow, merged_row_sort_key
 from .privacy import ensure_outside_git
 
 HEADERS = (
@@ -61,7 +61,8 @@ class ExcelReportWriter:
         worksheet = workbook.active
         worksheet.title = "Sheet1"
         worksheet.append(HEADERS)
-        for excel_row, item in enumerate(rows, start=2):
+        ordered_rows = sorted(rows, key=merged_row_sort_key)
+        for excel_row, item in enumerate(ordered_rows, start=2):
             source = item.source
             worksheet.append(
                 [

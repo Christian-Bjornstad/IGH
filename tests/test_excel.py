@@ -116,3 +116,31 @@ def test_percent_boundaries_remain_numeric(tmp_path: Path, percent: float):
     workbook = load_workbook(output, data_only=False)
     assert workbook["Sheet1"]["H2"].value == percent
     workbook.close()
+
+
+def test_excel_places_controls_first_in_required_order(tmp_path: Path):
+    rows = [
+        sample_row(),
+        sample_row(),
+        sample_row(),
+        sample_row(),
+        sample_row(),
+    ]
+    rows[0].sample = "SYN_PATIENT"
+    rows[1].sample = "NK"
+    rows[2].sample = "IGH_POS"
+    rows[3].sample = "NGS_NEG"
+    rows[4].sample = "IGH_SHM_POS"
+    output = tmp_path / "ordered.xlsx"
+
+    ExcelReportWriter().write(rows, output)
+
+    workbook = load_workbook(output, data_only=False)
+    assert [workbook["Sheet1"][f"P{row}"].value for row in range(2, 7)] == [
+        "IGH_SHM_POS",
+        "IGH_POS",
+        "NGS_NEG",
+        "NK",
+        "SYN_PATIENT",
+    ]
+    workbook.close()

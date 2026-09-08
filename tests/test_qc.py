@@ -57,3 +57,29 @@ def test_control_boundaries_are_evaluated_per_target():
     report = evaluate_qc(rows)
     assert len(report.controls) == 8
     assert all(item.status == "OK" for item in report.controls)
+
+
+def test_controls_follow_required_sample_order_then_target_order():
+    rows = []
+    for target in ("FR1", "Leader"):
+        rows.extend(
+            [
+                merged("NK", target, 1, reads=9_999, percent=10),
+                merged("NGS_NEG", target, 1, percent=0.99),
+                merged("IGH_POS", target, 1, percent=2.5),
+                merged("IGH_SHM_POS", target, 1, percent=2.5, mutation=2.0),
+            ]
+        )
+
+    report = evaluate_qc(rows)
+
+    assert [(item.sample, item.target) for item in report.controls] == [
+        ("IGH_SHM_POS", "Leader"),
+        ("IGH_SHM_POS", "FR1"),
+        ("IGH_POS", "Leader"),
+        ("IGH_POS", "FR1"),
+        ("NGS_NEG", "Leader"),
+        ("NGS_NEG", "FR1"),
+        ("NK", "Leader"),
+        ("NK", "FR1"),
+    ]

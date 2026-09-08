@@ -4,7 +4,14 @@ import csv
 import re
 from pathlib import Path
 
-from .models import MoleculeType, RunManifest, SampleFile, SourceRow, Target
+from .models import (
+    MoleculeType,
+    RunManifest,
+    SampleFile,
+    SourceRow,
+    Target,
+    sample_sort_key,
+)
 
 SOURCE_HEADERS = (
     "Rank",
@@ -208,7 +215,12 @@ class RunDiscovery:
             warnings.append(
                 f"Expected {expected_samples} samples per target, found {len(leader_paths)}"
             )
-        files.sort(key=lambda item: (item.sample_number, 0 if item.target == "Leader" else 1))
+        files.sort(
+            key=lambda item: (
+                *sample_sort_key(item.sample, item.sample_number),
+                0 if item.target == "Leader" else 1,
+            )
+        )
         return RunManifest(
             run_directory=run_directory,
             run_date=run_date,

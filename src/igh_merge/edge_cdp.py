@@ -82,7 +82,7 @@ IMGT_SCREENSHOT_SPECS: tuple[ImgtScreenshotSpec, ...] = (
     ImgtScreenshotSpec(
         "00_summary",
         "Sequence and result summary",
-        "h3.sequence_title",
+        "table.result_summary",
         "h4#sequence1_alv",
         max_height=3_800.0,
     ),
@@ -130,30 +130,10 @@ IMGT_SCREENSHOT_SPECS: tuple[ImgtScreenshotSpec, ...] = (
         max_height=5_000.0,
     ),
     ImgtScreenshotSpec(
-        "08_v_region_alignment",
-        "8. V-REGION alignment",
-        "h4#sequence1_section6",
-        "h4#sequence1_section7",
-    ),
-    ImgtScreenshotSpec(
         "09_v_region_translation",
         "9. V-REGION translation",
         "h4#sequence1_section7",
         "h4#sequence1_section8",
-    ),
-    ImgtScreenshotSpec(
-        "11_mutation_table",
-        "11. Mutation and amino-acid change table",
-        "h4#sequence1_section9",
-        "h4#sequence1_section10",
-        max_height=4_500.0,
-    ),
-    ImgtScreenshotSpec(
-        "12_mutation_statistics",
-        "12. Mutation and amino-acid change statistics",
-        "h4#sequence1_section10",
-        "h4#sequence1_section11",
-        max_height=5_000.0,
     ),
 )
 
