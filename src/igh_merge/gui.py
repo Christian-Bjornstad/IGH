@@ -51,11 +51,11 @@ from .external import (
     save_imgt_result,
 )
 from .edge_cdp import (
-    IMGT_SCREENSHOT_SECTIONS,
     EdgeCdpError,
     EdgeCdpTimeout,
+    capture_imgt_evidence,
     edge_cdp_available,
-    imgt_search_url,
+    submit_imgt_detailed,
 )
 from .candidates import is_functional_group_candidate
 from .io import ValidationError
@@ -1012,22 +1012,16 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.critical(self, "Cannot create evidence folder", str(exc))
             return
-        # Group by molecule type so we open the right IMGT form per group.
-        by_molecule: dict[str, list[ImgtRecord]] = {}
-        for record in self.imgt_result.records:
-            by_molecule.setdefault(
-                "cDNA" if self._molecule_for(record.external_id) == "cDNA"
-                else "gDNA",
-                [],
-            ).append(record)
+        candidates = self.external_batch.by_id() if self.external_batch else {}
+        records = list(self.imgt_result.records)
         QMessageBox.information(
             self,
-            "Edge will open",
-            "Microsoft Edge will open. Paste the pseudonymized FASTA into "
-            "IMGT/V-QUEST and submit, then return here. When the result page "
-            "is fully loaded, click OK to start capturing sections "
-            + ", ".join(str(n) for n in IMGT_SCREENSHOT_SECTIONS)
-            + ".",
+            "Edge evidence capture",
+            "Microsoft Edge will open and IMGT/V-QUEST Detailed view will run "
+            "once per pseudonymized External ID. IGHV will capture the summary, "
+            "V/D/J alignments, optional cDNA L/C alignments, junction, V-REGION "
+            "alignment/translation, and mutation evidence. Do not close Edge "
+            "until capture is complete.",
         )
         self._set_status("IMGT evidence capture in progress", "busy")
         try:
@@ -1037,33 +1031,31 @@ class MainWindow(QMainWindow):
                 background=False,
             ) as session:
                 page = session.page
-                for molecule_type, records in by_molecule.items():
-                    page.navigate(
-                        imgt_search_url("placeholder", molecule_type=molecule_type),
-                        timeout_s=60.0,
-                    )
-                    captured: list[Path] = []
-                    for record in records:
-                        sample_dir = evidence_dir / record.external_id
-                        sample_dir.mkdir(parents=True, exist_ok=True)
-                        # Full-page screenshot of the result page.
-                        page.capture_full_page(
-                            sample_dir / f"{record.external_id}_full.png"
+                captured: list[Path] = []
+                for record in records:
+                    candidate = candidates.get(record.external_id)
+                    if candidate is None:
+                        raise EdgeCdpError(
+                            f"No submitted sequence found for {record.external_id}."
                         )
-                        # Per-section clipped screenshots.
-                        for section in IMGT_SCREENSHOT_SECTIONS:
-                            selector = f"a[name='{section}']"
-                            result_path = sample_dir / (
-                                f"section_{section}.png"
-                            )
-                            page.capture_element(selector, result_path)
-                            if result_path.exists():
-                                captured.append(result_path)
-                    self.external_status.setText(
-                        f"Captured {len(captured)} IMGT screenshots "
-                        f"for {len(records)} {molecule_type} sequences "
-                        f"in {evidence_dir}."
+                    submit_imgt_detailed(
+                        page,
+                        external_id=record.external_id,
+                        sequence=candidate.sequence,
+                        molecule_type=candidate.molecule_type,
                     )
+                    sample_dir = evidence_dir / record.external_id
+                    captured.extend(
+                        capture_imgt_evidence(
+                            page,
+                            sample_dir,
+                            include_full_page=False,
+                        )
+                    )
+                self.external_status.setText(
+                    f"Captured {len(captured)} IMGT screenshots "
+                    f"for {len(records)} sequence(s) in {evidence_dir}."
+                )
         except (EdgeCdpError, EdgeCdpTimeout, OSError) as exc:
             self._set_status("IMGT capture failed", "error")
             QMessageBox.critical(self, "IMGT evidence failed", str(exc))

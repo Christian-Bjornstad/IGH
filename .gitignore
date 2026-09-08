@@ -46,3 +46,7 @@ output/
 # Local application settings and audit output
 *.audit.json
 .igh-merge-settings.json
+
+# Local Hermes previews and dependency resolver output
+.hermes/
+uv.lock

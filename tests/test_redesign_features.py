@@ -10,8 +10,13 @@ import pytest
 
 from igh_merge.edge_cdp import (
     IMGT_SCREENSHOT_SECTIONS,
+    IMGT_SCREENSHOT_SPECS,
+    EdgeCdpError,
+    capture_imgt_evidence,
     edge_cdp_available,
+    imgt_screenshot_specs,
     imgt_search_url,
+    submit_imgt_detailed,
 )
 from igh_merge.io import SummaryReader, detect_molecule_type
 from igh_merge.models import MergedRow, SourceRow
@@ -161,3 +166,127 @@ def test_imgt_screenshot_sections_are_1_to_6_and_9() -> None:
 def test_edge_cdp_available_returns_bool() -> None:
     result = edge_cdp_available()
     assert isinstance(result, bool)
+
+
+def test_imgt_screenshot_specs_match_current_detailed_dom() -> None:
+    by_key = {spec.key: spec for spec in IMGT_SCREENSHOT_SPECS}
+    assert by_key["00_summary"].start_selector == "h3.sequence_title"
+    assert by_key["01_v_gene"].start_selector == "h4#sequence1_alv"
+    assert by_key["03_j_gene"].start_selector == "h4#sequence1_alj"
+    assert by_key["04_leader"].optional is True
+    assert by_key["05_constant"].start_selector == "h4#sequence1_alC"
+    assert by_key["06_junction"].start_selector == "h4#sequence1_junction"
+    assert by_key["09_v_region_translation"].start_selector == "h4#sequence1_section7"
+    assert by_key["11_mutation_table"].start_selector == "h4#sequence1_section9"
+    assert by_key["12_mutation_statistics"].start_selector == "h4#sequence1_section10"
+
+
+class _FakeImgtPage:
+    def __init__(self, selectors: set[str], *, sequence_count: int = 1) -> None:
+        self.selectors = selectors
+        self.sequence_count = sequence_count
+        self.captured: list[tuple[str, str | None, str]] = []
+        self.navigated: list[str] = []
+        self.evaluated: list[str] = []
+        self.evaluate_args: list[object] = []
+
+    def navigate(self, url: str, *, timeout_s: float = 60.0) -> None:
+        self.navigated.append(url)
+
+    def _wait_for_load(self, *, timeout_s: float) -> None:
+        pass
+
+    def evaluate(self, expression: str, *, args=None):
+        self.evaluated.append(expression)
+        self.evaluate_args.append(args)
+        if "querySelectorAll('h3.sequence_title').length" in expression:
+            return self.sequence_count
+        if "h3.sequence_title" in expression and "innerText" in expression:
+            return "Sequence : 1 SEQ-TEST-001"
+        if "Boolean(document.querySelector(sel))" in expression:
+            return args[0] in self.selectors
+        if "form.submit()" in expression:
+            return True
+        return ""
+
+    def capture_region(
+        self,
+        start_selector: str,
+        path: Path,
+        *,
+        end_selector: str | None = None,
+        padding: float = 12.0,
+        max_height: float = 6_000.0,
+    ) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"png")
+        self.captured.append((start_selector, end_selector, path.name))
+        return path
+
+    def capture_full_page(self, path: Path) -> Path:
+        path.write_bytes(b"png")
+        return path
+
+
+def _required_imgt_selectors() -> set[str]:
+    return {
+        spec.start_selector
+        for spec in IMGT_SCREENSHOT_SPECS
+        if not spec.optional
+    }
+
+
+def test_imgt_screenshot_specs_skip_optional_cdna_sections() -> None:
+    page = _FakeImgtPage(_required_imgt_selectors())
+    specs = imgt_screenshot_specs(page)  # type: ignore[arg-type]
+    assert all(spec.key not in {"04_leader", "05_constant"} for spec in specs)
+
+
+def test_capture_imgt_evidence_writes_named_crops(tmp_path: Path) -> None:
+    page = _FakeImgtPage(_required_imgt_selectors())
+    paths = capture_imgt_evidence(page, tmp_path)  # type: ignore[arg-type]
+    names = {path.name for path in paths}
+    assert "00_summary.png" in names
+    assert "01_v_gene.png" in names
+    assert "06_junction.png" in names
+    assert "09_v_region_translation.png" in names
+    assert "11_mutation_table.png" in names
+    assert "12_mutation_statistics.png" in names
+    assert "99_full_page.png" not in names
+
+
+def test_capture_imgt_evidence_rejects_multi_sequence_page(tmp_path: Path) -> None:
+    page = _FakeImgtPage(_required_imgt_selectors(), sequence_count=2)
+    with pytest.raises(EdgeCdpError, match="exactly one"):
+        capture_imgt_evidence(page, tmp_path)  # type: ignore[arg-type]
+
+
+def test_submit_imgt_detailed_builds_single_sequence_form() -> None:
+    page = _FakeImgtPage(_required_imgt_selectors())
+    submit_imgt_detailed(  # type: ignore[arg-type]
+        page,
+        external_id="SEQ-TEST-001",
+        sequence="ACGT" * 30,
+        molecule_type="cDNA",
+    )
+    assert page.navigated == ["https://www.imgt.org/IMGT_vquest/analysis"]
+    submit_index = next(
+        index
+        for index, expression in enumerate(page.evaluated)
+        if "form.submit()" in expression
+    )
+    fields = page.evaluate_args[submit_index][0]
+    assert fields["moleculeType"] == "cDNA"
+    assert fields["resultType"] == "detailed"
+    assert fields["sequences"].startswith(">SEQ-TEST-001\n")
+
+
+def test_submit_imgt_detailed_rejects_invalid_sequence() -> None:
+    page = _FakeImgtPage(_required_imgt_selectors())
+    with pytest.raises(EdgeCdpError, match="invalid characters"):
+        submit_imgt_detailed(  # type: ignore[arg-type]
+            page,
+            external_id="SEQ-TEST-001",
+            sequence="ACGT-X",
+            molecule_type="gDNA",
+        )
