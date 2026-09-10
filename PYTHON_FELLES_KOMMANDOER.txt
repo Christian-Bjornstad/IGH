@@ -1,42 +1,54 @@
-IGH-APP - COMMANDS FOR PYTHON COMMON
+IGH Merge - Install & Run (Python FELLES)
+========================================
 
-Important:
-- Open Python Common through Ivanti/Workspace Control first.
-- Paste one complete command line and press Enter.
-- Do not include >>>.
-- Installation runs first time and after changes to requirements.txt.
-- After this TLS update, INSTALL PACKAGES must be run once more.
-- Start command is used each time the program is opened.
+Denne appen bruker det delte Python FELLES-miljøet som er tilgjengelig
+via Ivanti PowerGate paa jobb-PC.
 
-INSTALL PACKAGES
+Rask start (etter install)
+--------------------------
+1. Dobbeltklikk ``START_IGH_MERGE.cmd`` paa skrivebordet.
+   Filen bruker bare vanlig cmd og Windows-programmet ``clip.exe``.
+   PowerShell eller hjelpefiler med .ps1 brukes ikke.
 
-exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\install_python_felles_KDI.py", encoding="utf-8").read())
+Installasjon (forste gang, eller etter Python FELLES-oppgradering)
+-----------------------------------------------------------------
+1. Dobbeltklikk ``INSTALL_IGH_MERGE.cmd``.
+   - Skriptet kjoeres som din innloggede bruker via Ivanti PowerGate.
+   - Naavaerende Python FELLES-versjon logges til
+     ``%LOCALAPPDATA%\IGH\logs\install.log``.
+2. Installasjonen er idempotent - kjoer gjerne paa nytt etter en
+   Python FELLES-oppdatering for aa faa en ren versjon.
 
-START PROGRAM
+Hva installasjonen gjoer
+------------------------
+- Bruker Python FELLES sin innebygde pip-funksjon, samme moenster som MolStat.
+- Installerer prosjektet redigerbart i brukerens egne site-packages fra
+  ``pyproject.toml``. Dette inkluderer openpyxl, PyQt6, reportlab, requests,
+  truststore, python-docx og websocket-client.
+- Skriver aldri til ``requirements.txt``. De fem pinnede linjene beholdes
+  uendret for kompatibilitet med andre Python FELLES-kjoeringer.
 
-exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\start_python_felles_KDI.py", encoding="utf-8").read())
+Hva start-skriptet gjoer
+------------------------
+- Setter ``PYTHONPATH`` til prosjektmappa slik at
+  ``python -m igh_merge`` finner kildekoden uten aa installere pakken.
+- Kjoerer ``python -m igh_merge`` - samme inngang som PyInstaller bygger.
 
-FILES THAT SHOULD BE IN PROJECT FOLDER
+Kjoere direkte uten cmd-filene
+------------------------------
+For utvikling i en vanlig terminal (PowerShell / bash) er begge skriptene
+ogsaa kjoertbare direkte:
 
-install_python_felles_KDI.py
-start_python_felles_KDI.py
-requirements.txt
-qt_app.py
-src-folder
+    python install_python_felles.py
+    python start_python_felles.py
 
-NOTES
+CLI-modus
+---------
+Skriv ut en helper-tekst:
 
-Packages are installed in .python_felles_packages in the project folder. Write
-access to the central Python installation is therefore not required.
+    python -m igh_merge --help
 
-The app uses Windows' managed certificate store when contacting IMGT
-and ARResT. Certificate validation is active. If a certificate error still
-appears after a new installation, IT must check the organization's proxy-/Ivanti-
-root certificate in Windows Trusted Root Certification Authorities.
-
-If the job network does not have access to PyPI, IT or a development PC can place
-Windows/Python 3.14-compatible wheel files in a folder called wheelhouse in
-the project folder. The installation script uses this automatically without network access.
-
-Regular BAT file or Windows shortcut is not used. Python Common opens first,
-and then the command is pasted in.
+Loggfiler
+---------
+- Installasjon: ``%LOCALAPPDATA%\IGH\logs\install.log``
+- Start:        ``%LOCALAPPDATA%\IGH\logs\start.log``

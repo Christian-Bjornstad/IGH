@@ -105,31 +105,32 @@ python -m pip install -e ".[dev]"
 Appen kan også startes direkte fra prosjektmappen:
 
 ```powershell
-.\Start-IGH-Merge.ps1
+.\START_IGH_MERGE.cmd
 ```
 
 ### Python Felles / Ivanti
 
-På KDI-PC-er der `python.exe`, BAT-filer og vanlige snarveier blokkeres, åpnes
-**Python Felles** først. Kommandoene limes inn uten `>>>`.
+På administrerte PC-er der `python.exe`, BAT-filer og vanlige snarveier
+blokkeres, åpnes **Python Felles** via Ivanti PowerGate-snarveien
+(`pwrgate.exe 15694`) og kommandoene limes inn uten `>>>`.
 
 <details>
 <summary><strong>Vis installasjons- og startkommandoer</strong></summary>
 
-Installer pakker første gang og etter endringer i `requirements.txt`:
+Dobbeltklikk `INSTALL_IGH_MERGE.cmd` for å installere avhengighetene
+første gang og etter hver Python FELLES-oppgradering. Filen er en ren
+cmd-/PowerGate-bro som bruker Windows sitt innebygde `clip.exe` til å
+legge følgende kommando på utklippstavlen. Den bruker ikke PowerShell:
 
 ```python
-exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\install_python_felles_KDI.py", encoding="utf-8").read())
+import runpy; runpy.run_path(r'<prosjektmapp>\install_python_felles.py', run_name='igh_merge_install_felles')['main']()
 ```
 
-Start appen:
+Dobbeltklikk `START_IGH_MERGE.cmd` for å starte appen (samme mønster,
+kjører `start_python_felles.py`).
 
-```python
-exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\start_python_felles_KDI.py", encoding="utf-8").read())
-```
-
-Pakkene installeres i `.python_felles_packages` i prosjektmappen. Det kreves
-ikke skrivetilgang til den sentrale Python-installasjonen. Se også
+Skriptene er generelle: de bruker `Path(__file__).parent` som prosjektrot
+og aldri hardkodede `K:`-stier. Detaljer og loggstier i
 [`PYTHON_FELLES_KOMMANDOER.txt`](PYTHON_FELLES_KOMMANDOER.txt).
 
 </details>
@@ -241,8 +242,11 @@ IGH/
 ├── tools/                  # Sikkerhets- og golden-sammenligning
 ├── docs/                   # Kliniske regler og integrasjonsplaner
 ├── requirements.txt        # Låste Python Felles-avhengigheter
-├── install_python_felles_KDI.py
-└── start_python_felles_KDI.py
+├── INSTALL_IGH_MERGE.cmd            # Ivanti PowerGate-bro for installasjon
+├── INSTALL_IGH_MERGE_INSTALLER.cmd  # Alias-bro (gammelt navn peker hit)
+├── START_IGH_MERGE.cmd              # Ivanti PowerGate-bro for start
+├── install_python_felles.py         # Generell installasjonslauncher
+└── start_python_felles.py           # Generell start-launcher
 ```
 
 Mer dokumentasjon:
