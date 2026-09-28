@@ -10,7 +10,7 @@ occurs after payload preview and explicit confirmation.
   from IMGT without overwriting LymphoTrack results.
 - Assign CLL subset with clear source. IMGT can identify subsets 2 and 8,
   while ARResT/AssignSubsets covers 19 major subsets.
-- Maintain the compatible merged sheet with 22 columns.
+- Maintain the merged sheet with 24 columns, including external ID and molecule type.
 - Do not introduce automatic clinical review or decision support.
 
 ## Locked Rule for External Sending
@@ -132,7 +132,7 @@ the merged sheet remains compatible and traceability is not compressed away.
 - Test shall prove that external payload does not contain internal sample IDs.
 - Test shall prove that results from wrong sequence or wrong run cannot
   be imported.
-- Merged export shall retain 22 columns, formulas, and formatting.
+- Merged export shall retain 24 columns, formulas, and formatting.
 - A clinical pilot is compared with manual workflow and signed by
   responsible specialist before the function enters routine use.
 

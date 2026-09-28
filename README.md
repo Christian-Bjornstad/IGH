@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="src/igh_merge/assets/igh-merge-icon.png" alt="IGH Merge-ikon" width="112">
+  <img src="src/igh_merge/assets/igh-merge-icon.png" alt="IGHV-ikon" width="112">
 </p>
 
-<h1 align="center">IGH Merge</h1>
+<h1 align="center">IGHV</h1>
 
 <p align="center">
   <strong>Sikker og oversiktlig behandling av IGHV-SHM-resultater</strong><br>
-  Norsk PyQt6-applikasjon for merge, kjøringskontroller, IMGT/ARResT-analyse,
-  rapportutkast og kompatibel Excel-eksport.
+  PyQt6-applikasjon med engelsk grensesnitt for merge, kjøringskontroller,
+  IMGT/ARResT-analyse, rapportutkast og Excel-eksport.
 </p>
 
 <p align="center">
@@ -15,18 +15,17 @@
   <img alt="PyQt6" src="https://img.shields.io/badge/GUI-PyQt6-1E3A5F?logo=qt&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows11&logoColor=white">
   <img alt="Local first" src="https://img.shields.io/badge/Data-local--first-15803D">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-48%20passed-15803D">
 </p>
 
 ---
 
-![IGH Merge med syntetiske testdata](docs/assets/igh-merge-overview.png)
+![Tidligere IGH Merge-grensesnitt med syntetiske testdata](docs/assets/igh-merge-overview.png)
 
 > Skjermbildet bruker utelukkende konstruerte prøve-ID-er og sekvenser.
 
 ## Hva appen gjør
 
-IGH Merge samler den manuelle IGHV-SHM-arbeidsflyten i ett lokalt
+IGHV samler den manuelle IGHV-SHM-arbeidsflyten i ett lokalt
 desktopverktøy. GUI og kommandolinje bruker samme validerte prosesseringskjerne.
 
 | Område | Funksjonalitet |
@@ -36,8 +35,9 @@ desktopverktøy. GUI og kommandolinje bruker samme validerte prosesseringskjerne
 | **Sekvenskobling** | Finner eksakt FR1-støtte, Leader-varianter og identiske sekvenser mellom prøver |
 | **IMGT** | Sender pseudonymisert FASTA og henter den komplette resultatpakken |
 | **ARResT** | Henter subset, confidence, score og SeqCure-status |
-| **Rapporter** | Lager lokalt rapportutkast og sporbare auditdata per prøve |
-| **Excel** | Eksporterer én kompatibel merged-fane med 22 kolonner og valgfri gulmarkering |
+| **Rapporter** | Lager lokale PDF- og Word-utkast med sporbare auditdata per prøve |
+| **IMGT-dokumentasjon** | Lagrer skjermutsnitt fra Detailed view via Microsoft Edge under kjøringsmappen |
+| **Excel** | Eksporterer én merged-fane med 24 kolonner og valgfri gulmarkering |
 
 ## Arbeidsflyt
 
@@ -77,7 +77,7 @@ Prosjektet er bygget etter et **local-first**-prinsipp:
 Kliniske data skal ligge fysisk utenfor repoet, normalt i:
 
 ```text
-C:\Users\<bruker>\Documents\IGH-data
+C:\Users\<bruker>\Documents\IGHV-data
 ```
 
 > Sikkerhetsmekanismene i repoet supplerer, men erstatter ikke virksomhetens
@@ -182,15 +182,19 @@ som standard.
 
 ### Rapportutkast
 
-Etter fullført IMGT kan **Lag rapportutkast** opprette én lokal PDF per prøve
-og `rapportdata.audit.json` under:
+Etter fullført IMGT kan **Generate report draft** opprette lokale PDF- og
+Word-utkast per prøve og `report_data.audit.json` under:
 
 ```text
-YYYY_MM_DD_rapporter\<sesjon>
+YYYY_MM_DD_reports\<sesjon>
 ```
 
 Rapportdata inkluderer blant annet dybde, Leader/FR1-andel, V/D/J-alleler,
 VH-identitet, funksjonalitet, CDR3, indels og subset.
+
+**Capture IMGT evidence (Edge)** lagrer PNG-utsnitt separat under
+`YYYY_MM_DD_imgt_evidence\<ekstern-ID>`. Bildene bygges foreløpig ikke inn i
+rapportutkastene. Edge-flyten må prøves på den administrerte PC-en.
 
 ## Kommandolinje
 
@@ -258,6 +262,6 @@ Mer dokumentasjon:
 ---
 
 <p align="center">
-  <strong>IGH Merge</strong><br>
+  <strong>IGHV</strong><br>
   Lokal, sporbar og menneskekontrollert IGHV-SHM-arbeidsflyt.
 </p>
