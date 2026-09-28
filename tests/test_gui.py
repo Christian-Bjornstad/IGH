@@ -4,13 +4,57 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QDialog
+import pytest
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel
 from PyQt6.QtCore import Qt
 
 from igh_merge.gui import APP_ICON_PATH, MainWindow, PayloadDialog, application_icon
 from igh_merge.service import MergeService
 
 from conftest import write_summary
+
+
+class _RunningThread:
+    def isRunning(self):
+        return True
+
+
+def test_validation_does_not_replace_run_during_external_analysis(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    window._external_thread = _RunningThread()
+    monkeypatch.setattr(window.service, "process", lambda *_args: pytest.fail("run changed"))
+    monkeypatch.setattr("igh_merge.gui.QMessageBox.information", lambda *_args: None)
+
+    window._validate()
+
+    assert window.result is None
+    window._external_thread = None
+    window.close()
+    assert app is not None
+
+
+def test_candidate_selection_does_not_replace_batch_during_external_analysis(
+    run_factory, make_row
+):
+    app = QApplication.instance() or QApplication([])
+    root, leader, fr1 = run_factory()
+    write_summary(leader, "SYN_LOCAL_ONLY", 1, [make_row(1, "ACGT" * 40)])
+    write_summary(fr1, "SYN_LOCAL_ONLY", 1, [make_row(1, "ACGT" * 30)])
+    window = MainWindow()
+    window.result = MergeService().process(root, expected_samples=1)
+    window._populate_result()
+    window.candidate_table.item(0, 0).setCheckState(Qt.CheckState.Checked)
+    original_batch = window._ensure_external_batch()
+    window._external_thread = _RunningThread()
+
+    with pytest.raises(ValueError, match="in progress"):
+        window._ensure_external_batch()
+
+    assert window.external_batch is original_batch
+    window._external_thread = None
+    window.close()
+    assert app is not None
 
 
 def test_gui_has_required_tabs():
@@ -32,6 +76,11 @@ def test_gui_has_required_tabs():
         "Highlight app's yellow candidate rows in Excel"
     )
     assert window.highlight_excel_checkbox.isChecked() is False
+    export_intro = next(
+        label for label in window.findChildren(QLabel) if "EXPORT" in label.text()
+    )
+    assert "24 columns" in export_intro.text()
+    assert "24 columns" in window.highlight_excel_checkbox.toolTip()
     assert APP_ICON_PATH.is_file()
     assert application_icon().isNull() is False
     assert window.windowIcon().isNull() is False

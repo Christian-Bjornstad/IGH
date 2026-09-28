@@ -58,6 +58,7 @@ from .edge_cdp import (
     submit_imgt_detailed,
 )
 from .candidates import is_functional_group_candidate
+from .excel import HEADERS
 from .io import ValidationError
 from .models import MergeResult, QcItem
 from .privacy import PrivacyError, ensure_outside_git
@@ -507,7 +508,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(14)
         intro = QLabel(
-            "4  EXPORT   Create a single compatible merged sheet with 22 columns. "
+            f"4  EXPORT   Create a single compatible merged sheet with {len(HEADERS)} columns. "
             "Existing files are overwritten only after confirmation."
         )
         intro.setObjectName("PageIntro")
@@ -530,7 +531,7 @@ class MainWindow(QMainWindow):
             "Highlight app's yellow candidate rows in Excel"
         )
         self.highlight_excel_checkbox.setToolTip(
-            "Colors the same preliminary Leader candidates yellow across all 22 columns."
+            f"Colors the same preliminary Leader candidates yellow across all {len(HEADERS)} columns."
         )
         grid.addWidget(QLabel("Output"), 0, 0)
         grid.addWidget(self.output_edit, 0, 1)
@@ -634,6 +635,11 @@ class MainWindow(QMainWindow):
             self.output_edit.setText(path if path.lower().endswith(".xlsx") else f"{path}.xlsx")
 
     def _validate(self) -> None:
+        if self._external_thread and self._external_thread.isRunning():
+            QMessageBox.information(
+                self, "Analysis in progress", "Wait for the ongoing analysis to finish."
+            )
+            return
         self._set_status("Validating …", "busy")
         self.validate_button.setEnabled(False)
         self.validate_button.setText("Validating …")
@@ -791,6 +797,8 @@ class MainWindow(QMainWindow):
         return tuple(indices)
 
     def _ensure_external_batch(self) -> ExternalBatch:
+        if self._external_thread and self._external_thread.isRunning():
+            raise ValueError("External analysis in progress; wait before changing selection")
         if not self.result:
             raise ValueError("Validate a run before selecting sequences")
         selected = self._selected_result_indices()
@@ -864,6 +872,9 @@ class MainWindow(QMainWindow):
             return
         self.send_imgt_button.setEnabled(False)
         self.send_arrest_button.setEnabled(False)
+        self.validate_button.setEnabled(False)
+        self.candidate_table.setEnabled(False)
+        self.select_candidates_button.setEnabled(False)
         self.external_status.setText(
             f"Sending {len(batch.candidates)} pseudonymized sequences to {service} …"
         )
@@ -971,6 +982,9 @@ class MainWindow(QMainWindow):
         self.external_progress.setVisible(False)
         self.send_imgt_button.setEnabled(True)
         self.send_arrest_button.setEnabled(True)
+        self.validate_button.setEnabled(True)
+        self.candidate_table.setEnabled(True)
+        self.select_candidates_button.setEnabled(True)
         if self._external_worker:
             self._external_worker.deleteLater()
         if self._external_thread:
@@ -1020,7 +1034,7 @@ class MainWindow(QMainWindow):
             "Microsoft Edge will open and IMGT/V-QUEST Detailed view will run "
             "once per pseudonymized External ID. IGHV will capture the summary, "
             "V/D/J alignments, optional cDNA L/C alignments, junction, V-REGION "
-            "alignment/translation, and mutation evidence. Do not close Edge "
+            "translation. Do not close Edge "
             "until capture is complete.",
         )
         self._set_status("IMGT evidence capture in progress", "busy")
