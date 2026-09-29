@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import runpy
 from pathlib import Path
 
@@ -28,7 +29,7 @@ EXPECTED_IMPORTS = [
 ]
 
 
-def test_installer_installs_editable_project_and_verifies_imports(tmp_path: Path) -> None:
+def test_installer_installs_runtime_project_and_verifies_imports(tmp_path: Path, capsys) -> None:
     functions = runpy.run_path(str(INSTALL_SCRIPT))
     (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     (tmp_path / "src" / "igh_merge").mkdir(parents=True)
@@ -44,9 +45,10 @@ def test_installer_installs_editable_project_and_verifies_imports(tmp_path: Path
 
     assert result == 0
     assert pip_calls == [
-        EXPECTED_PIP_ARGS + [f"{tmp_path.resolve()}[dev]"]
+        EXPECTED_PIP_ARGS + [str(tmp_path.resolve())]
     ]
     assert imported == EXPECTED_IMPORTS
+    assert f"IGHV project: {tmp_path.resolve()}" in capsys.readouterr().out
 
 
 def test_start_launches_the_gui_main(tmp_path: Path) -> None:
@@ -62,6 +64,36 @@ def test_start_launches_the_gui_main(tmp_path: Path) -> None:
 
     assert result == 0
     assert calls == [True]
+
+
+def test_start_identifies_project_and_python(tmp_path: Path, capsys) -> None:
+    functions = runpy.run_path(str(START_SCRIPT))
+    (tmp_path / "src" / "igh_merge").mkdir(parents=True)
+
+    functions["start"](
+        project_dir=tmp_path,
+        user_site=tmp_path / "user-site",
+        app_main=lambda: 0,
+    )
+
+    output = capsys.readouterr().out
+    assert f"IGHV project: {tmp_path.resolve()}" in output
+    assert "Python FELLES:" in output
+
+
+def test_start_explains_missing_runtime_dependency(tmp_path: Path, monkeypatch) -> None:
+    functions = runpy.run_path(str(START_SCRIPT))
+    (tmp_path / "src" / "igh_merge").mkdir(parents=True)
+    original_import = builtins.__import__
+
+    def missing_docx(name, *args, **kwargs):
+        if name == "igh_merge.__main__":
+            raise ModuleNotFoundError("No module named 'docx'", name="docx")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_docx)
+    with pytest.raises(RuntimeError, match="INSTALL_IGH_MERGE.cmd"):
+        functions["start"](project_dir=tmp_path, user_site=tmp_path / "user-site")
 
 
 @pytest.mark.parametrize(
@@ -132,6 +164,9 @@ def test_cmd_files_use_pure_cmd_without_powershell() -> None:
         assert "pwrgate.exe" in low, f"{cmd_path.name} must open Ivanti PowerGate"
         assert "15694" in text, f"{cmd_path.name} must use the Python FELLES slot"
         assert "clip" in low, f"{cmd_path.name} must copy via clip.exe"
+        script_var = "%INSTALL_SCRIPT%" if cmd_path == INSTALL_CMD else "%START_SCRIPT%"
+        assert script_var in text
+        assert "echo Prosjektmappe:" in text
         assert "powershell" not in low, f"{cmd_path.name} must not use PowerShell"
         assert ".ps1" not in low, f"{cmd_path.name} must not call .ps1 helpers"
         payload = (

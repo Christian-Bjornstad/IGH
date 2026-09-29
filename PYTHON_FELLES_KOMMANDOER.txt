@@ -13,16 +13,20 @@ Rask start (etter install)
 Installasjon (forste gang, eller etter Python FELLES-oppgradering)
 -----------------------------------------------------------------
 1. Dobbeltklikk ``INSTALL_IGH_MERGE.cmd``.
+   Kontroller at CMD-vinduet viser riktig prosjektmappe og
+   ``install_python_felles.py``. Kommandoer til
+   ``install_python_felles_KDI.py`` bruker en eldre IGH-kopi.
    - Skriptet kjoeres som din innloggede bruker via Ivanti PowerGate.
-   - Naavaerende Python FELLES-versjon logges til
-     ``%LOCALAPPDATA%\IGH\logs\install.log``.
+   - Aktiv Python-versjon og prosjektmappe vises i Python FELLES.
+     Feil logges til ``%LOCALAPPDATA%\IGH\logs\install.log``.
 2. Installasjonen er idempotent - kjoer gjerne paa nytt etter en
    Python FELLES-oppdatering for aa faa en ren versjon.
 
 Hva installasjonen gjoer
 ------------------------
 - Bruker Python FELLES sin innebygde pip-funksjon, samme moenster som MolStat.
-- Installerer prosjektet redigerbart i brukerens egne site-packages fra
+- Installerer appens kjoereavhengigheter og prosjektet redigerbart i
+  brukerens egne site-packages fra
   ``pyproject.toml``. Dette inkluderer openpyxl, PyQt6, reportlab, requests,
   truststore, python-docx og websocket-client.
 - Skriver aldri til ``requirements.txt``. De fem pinnede linjene beholdes
@@ -30,9 +34,9 @@ Hva installasjonen gjoer
 
 Hva start-skriptet gjoer
 ------------------------
-- Setter ``PYTHONPATH`` til prosjektmappa slik at
-  ``python -m igh_merge`` finner kildekoden uten aa installere pakken.
-- Kjoerer ``python -m igh_merge`` - samme inngang som PyInstaller bygger.
+- Legger brukerens site-packages og prosjektets ``src``-mappe foerst paa
+  Python sin soekesti.
+- Viser aktiv Python-versjon og prosjektmappe, og starter IGHV-GUI-et.
 
 Kjoere direkte uten cmd-filene
 ------------------------------
@@ -41,12 +45,6 @@ ogsaa kjoertbare direkte:
 
     python install_python_felles.py
     python start_python_felles.py
-
-CLI-modus
----------
-Skriv ut en helper-tekst:
-
-    python -m igh_merge --help
 
 Loggfiler
 ---------

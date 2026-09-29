@@ -20,6 +20,8 @@ if not exist "%INSTALL_SCRIPT%" (
 )
 
 rem Ren cmd: bygg Python-kommandoen i en variabel og kopier med clip.exe.
+echo Prosjektmappe: %~dp0
+echo Installfil: %INSTALL_SCRIPT%
 set "PAYLOAD=import runpy; runpy.run_path(r'%INSTALL_SCRIPT%', run_name='igh_merge_install_felles')['main']()"
 <nul set /p "=%PAYLOAD%" | clip.exe
 if errorlevel 1 (

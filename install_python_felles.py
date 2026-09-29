@@ -95,6 +95,8 @@ def install(
             ensurepip.bootstrap(user=True, upgrade=True)
         from pip._internal.cli.main import main as pip_main
 
+    print(f"Python FELLES: {sys.version.split()[0]} ({sys.executable})")
+    print(f"IGHV project: {project}")
     result = int(
         pip_main(
             [
@@ -102,7 +104,7 @@ def install(
                 "--user",
                 "--disable-pip-version-check",
                 "-e",
-                f"{project}[dev]",
+                str(project),
             ]
         )
         or 0

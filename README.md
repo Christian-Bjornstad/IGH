@@ -126,6 +126,12 @@ legge følgende kommando på utklippstavlen. Den bruker ikke PowerShell:
 import runpy; runpy.run_path(r'<prosjektmapp>\install_python_felles.py', run_name='igh_merge_install_felles')['main']()
 ```
 
+Kontroller at CMD-vinduet viser mappen du nettopp lastet ned og
+`install_python_felles.py`. En lagret kommando til
+`install_python_felles_KDI.py` peker til en eldre utgave og installerer ikke
+alle avhengighetene denne appen bruker. Installasjonen viser aktiv
+Python-versjon og prosjektmappe før pip starter.
+
 Dobbeltklikk `START_IGH_MERGE.cmd` for å starte appen (samme mønster,
 kjører `start_python_felles.py`).
 

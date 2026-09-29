@@ -71,9 +71,17 @@ def start(
     _add_path_first(project / "src")
     _add_path_first(project)
     importlib.invalidate_caches()
+    print(f"Python FELLES: {sys.version.split()[0]} ({sys.executable})")
+    print(f"IGHV project: {project}")
 
     if app_main is None:
-        from igh_merge.__main__ import main as app_main
+        try:
+            from igh_merge.__main__ import main as app_main
+        except ModuleNotFoundError as error:
+            raise RuntimeError(
+                f"Missing Python package {error.name!r}. Run INSTALL_IGH_MERGE.cmd "
+                "from this project folder, then restart Python FELLES."
+            ) from error
 
     result = int(app_main() or 0)
     if result != 0:
