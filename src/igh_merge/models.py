@@ -94,7 +94,8 @@ class MergedRow:
 
     @property
     def fasta(self) -> str:
-        return f">{self.sample}-{self.target}-{self.source.rank}\n{self.source.sequence}"
+        header = self.external_id or f"{self.sample}-{self.target}-{self.source.rank}"
+        return f">{header}\n{self.source.sequence}"
 
 
 @dataclass(frozen=True)

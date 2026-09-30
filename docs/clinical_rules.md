@@ -23,8 +23,9 @@ results, and final functionality are handled manually.
 
 ## Operational Clone Grouping
 
-The app creates a preliminary, local grouping to limit which
-Leader sequences are sent to IMGT and ARResT:
+The app retains preliminary local functional grouping for yellow marking.
+It does not limit external analysis eligibility: all Leader and FR1 >=2.5%
+are proposed independently of functionality. The yellow marking follows:
 
 - Only rows with `In-frame=Y` and `No Stop codon=Y` may be included.
 - Leader at least 2.5 % is included.
@@ -37,7 +38,7 @@ Leader sequences are sent to IMGT and ARResT:
   in the whole sequence, and, when CDR3 is found, at most 15 % deviation
   in CDR3.
 
-This is grouping and selection, not automatic clinical classification.
+This is local grouping, not automatic clinical classification or external analysis eligibility.
 
 ## Analysis eligibility (2026-09-30)
 All Leader and FR1 rows with unrounded reads >=2.5% are proposed for IMGT, regardless of Y/N functionality. Yellow functional grouping is separate. Molecule type uses a case-insensitive cDNA token delimited by punctuation/whitespace. External IDs remain stable for an unchanged sequence.

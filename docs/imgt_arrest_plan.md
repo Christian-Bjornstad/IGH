@@ -5,7 +5,7 @@ occurs after payload preview and explicit confirmation.
 
 ## Goals
 
-- Analyze manually selected Leader rearrangements in IMGT/V-QUEST.
+- Analyze selected Leader and FR1 rearrangements (all >=2.5% proposed) in IMGT/V-QUEST.
 - Retrieve productivity indicators, V/D/J calls, identity, and tool version
   from IMGT without overwriting LymphoTrack results.
 - Assign CLL subset with clear source. IMGT can identify subsets 2 and 8,
@@ -25,8 +25,8 @@ occurs after payload preview and explicit confirmation.
    stored on IMGT servers for four to six months.
 4. Retention, processing location, and terms for ARResT are documented in
    local procedure. The app shows the service as recipient before sending.
-5. Automatic retry can only occur while the dialog is open and must use
-   exactly the same pseudonymous payload.
+5. Bounded retry follows an actively confirmed job and uses exactly the same
+   pseudonymous payload. Only ARResT timeout/5xx is retried (two attempts).
 
 ## Data Model and Local Storage
 
@@ -49,8 +49,8 @@ are not overwritten by IMGT.
 ## Phase 1 – Common Send and Result Foundation (implemented)
 
 1. Add the **IMGT & ARResT** tab.
-2. Let the user select Leader rows and create batches of up to 50
-   complete nucleotide sequences.
+2. Let the user select Leader and FR1 rows. A sequential queue partitions
+   the selection into <=50-sequence service batches, homogeneous by molecule type for IMGT.
 3. Build a pseudonymized FASTA payload and a local linkage file. Raw FASTQ
    is not sent.
 4. Show the locked IMGT settings:
@@ -146,6 +146,6 @@ the merged sheet remains compatible and traceability is not compressed away.
 6. Terms and professional documentation.
 7. Clinical pilot and sign-off before routine use.
 
-Current selection: all Leader and FR1 >=2.5% (unrounded), including nonproductive sequences. The older Leader/Y-Y selection below is superseded for external analysis.
+Current selection: all Leader and FR1 >=2.5% (unrounded), including nonproductive sequences. The older Leader/Y-Y selection is superseded for external analysis.
 
 Verified 2026-09-30 via GET: arrest.tools redirects to bat.infspire.org. AssignSubsets form action is https://bat.infspire.org/cgi-bin/arrest/assignsubsets_html.pl. Station3/subsets is Shiny, with no compatible CGI form. No independent reserve verified. Two attempts only for timeout/5xx, same payload; TLS/schema/ID/hash errors are not retried.

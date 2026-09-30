@@ -720,7 +720,8 @@ def submit_imgt_detailed(
     browser; no extra HTTP client, driver, or executable is involved.
     """
     normalized_sequence = "".join(sequence.split()).upper()
-    if not normalized_sequence or set(normalized_sequence) - set("ACGTN"):
+    from .external import IUPAC_NUCLEOTIDES
+    if not normalized_sequence or set(normalized_sequence) - IUPAC_NUCLEOTIDES:
         raise EdgeCdpError("IMGT evidence sequence contains invalid characters.")
     fasta = f">{external_id}\n{normalized_sequence}\n"
     fields = {

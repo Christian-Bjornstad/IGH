@@ -38,3 +38,32 @@ The HTTP identity was 100%. Detailed HTML confirms summary and sections 1–6/9
 selectors. Live Edge capture on this workstation exits code 0 before publishing
 DevToolsActivePort, even with a fresh headless profile. Crop visual QA cannot
 currently be confirmed; this is reported rather than treated as a passing check.
+
+## Completed implementation and validation
+
+The branch implements eligibility for both targets, stable sequence-bound IDs,
+homogeneous IMGT partitioning, partial failure handling, right/event identity
+selection with matching nucleotide counts, alternative J-call notes, secure
+ARResT retry, asynchronous evidence capture, a text/image viewer, linked
+Word/PDF/Excel/evidence packages, and a shared gray-purple theme with filtering.
+FR4-IMGT from `4_IMGT-gapped-AA-sequences.txt` supplies AA 118–121, following
+IMGT unique numbering (FR4 starts at 118); no raw nucleotide offsets or motif
+search on an unnumbered junction are used.
+
+A fresh whole-branch reviewer found mapping overwrite, false success after
+local persistence failure, and disabled reporting after ARResT. All three
+were repaired with regression checks. Additional checks cover cached sequence
+changes and FASTA IDs in Excel. No clinical source data were used.
+
+160 automated tests passed; control order and 24 Excel columns are covered.
+A synthetic two-rearrangement PDF was rendered and visually inspected. Qt was
+inspected at 1040x720 and 1380x900 with long synthetic names. A wheel was built,
+installed into a separate QA target, imported from that target, and its GUI
+started. Local Python FELLES start and Qt event loop returned exit 0. This
+validates the local repo copy; no K: installation or Ivanti production session
+was exercised. The five-line requirements contract was retained.
+
+Outstanding validation: live Edge crops (Edge exits before publishing CDP),
+Word pagination (render_docx.py cannot find LibreOffice and Word is absent),
+and the deliberately deferred grouped reanalysis parameter described above.
+These are not reported as passing checks.

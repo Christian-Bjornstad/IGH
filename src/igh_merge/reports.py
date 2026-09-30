@@ -87,8 +87,8 @@ def _sample_report_records(
                 else "not calculated"
             )
             counts = (
-                f"{record.v_identity_numerator}/{record.v_identity_denominator} nt"
-                if record.v_identity_numerator is not None
+                f"{record.selected_identity_counts[0]}/{record.selected_identity_counts[1]} nt"
+                if record.selected_identity_counts[0] is not None
                 else "not available"
             )
             functionality = (

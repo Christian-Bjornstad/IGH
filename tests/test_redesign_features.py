@@ -302,3 +302,8 @@ def test_submit_imgt_detailed_rejects_invalid_sequence() -> None:
             sequence="ACGT-X",
             molecule_type="gDNA",
         )
+
+
+def test_submit_imgt_detailed_accepts_iupac() -> None:
+    page = _FakeImgtPage(_required_imgt_selectors())
+    submit_imgt_detailed(page, external_id='SEQ-TEST-001', sequence='ACGTRYSWKMBDHVN', molecule_type='gDNA')

@@ -26,6 +26,59 @@ def test_filter_and_counter_preserve_selection(run_factory, make_row):
     window.close()
 
 
+def test_validated_run_offers_edge_without_http(run_factory, make_row):
+    app = QApplication.instance() or QApplication([])
+    root, leader, fr1 = run_factory()
+    write_summary(leader, 'SYN', 1, [make_row(1, 'ACGT' * 40, percent=3)])
+    write_summary(fr1, 'SYN', 1, [make_row(1, 'ACGT' * 40)])
+    window = MainWindow()
+    window.result = MergeService().process(root, 1)
+    window._populate_result()
+    assert window.imgt_result is None
+    assert window.capture_button.isEnabled()
+    window.close()
+
+
+def test_disk_failure_is_not_reported_as_completed(run_factory, make_row, monkeypatch):
+    from igh_merge.analysis_jobs import AnalysisJobResult
+    from test_report_package import results
+    app = QApplication.instance() or QApplication([])
+    root, leader, fr1 = run_factory()
+    write_summary(leader, 'SYN', 1, [make_row(1, 'ACGT' * 40, percent=3)])
+    write_summary(fr1, 'SYN', 1, [make_row(1, 'ACGT' * 40)])
+    window = MainWindow()
+    window.result = MergeService().process(root, 1)
+    window._populate_result()
+    batch = window._ensure_external_batch()
+    def fail(*args):
+        raise OSError('disk full')
+    monkeypatch.setattr('igh_merge.gui.save_imgt_result', fail)
+    monkeypatch.setattr('igh_merge.gui.QMessageBox.critical', lambda *args: None)
+    window._external_succeeded('IMGT', batch, AnalysisJobResult(((batch, results(batch)),), {}))
+    assert not window.report_button.isEnabled()
+    assert window.imgt_result is None
+    assert '0 completed' in window.external_status.text()
+    assert 'failed' in window.external_status.text()
+    window.close()
+
+
+def test_cached_batch_rechecks_sequence_hash(run_factory, make_row):
+    from dataclasses import replace
+    app = QApplication.instance() or QApplication([])
+    root, leader, fr1 = run_factory()
+    write_summary(leader, 'SYN', 1, [make_row(1, 'ACGT' * 40, percent=3)])
+    write_summary(fr1, 'SYN', 1, [make_row(1, 'ACGT' * 40)])
+    window = MainWindow()
+    window.result = MergeService().process(root, 1)
+    window._populate_result()
+    first = window._ensure_external_batch()
+    row = window.result.rows[0]
+    row.source = replace(row.source, sequence='TGCA' * 40)
+    second = window._ensure_external_batch()
+    assert second.candidate_ids[0] != first.candidate_ids[0]
+    window.close()
+
+
 def test_refresh_keeps_reads_and_status_columns(run_factory, make_row):
     app = QApplication.instance() or QApplication([])
     root, leader, fr1 = run_factory()
@@ -43,4 +96,21 @@ def test_refresh_keeps_reads_and_status_columns(run_factory, make_row):
     assert window.candidate_table.item(0, 7).text() == 'productive'
     assert window.candidate_table.item(0, 8).text() == 'unassigned'
     assert window.candidate_table.item(0, 9).text() == '2'
+    window.close()
+
+
+def test_arrest_cleanup_restores_report_button(run_factory, make_row):
+    from test_report_package import results
+    app = QApplication.instance() or QApplication([])
+    root, leader, fr1 = run_factory()
+    write_summary(leader, 'SYN', 1, [make_row(1, 'ACGT' * 40, percent=3)])
+    write_summary(fr1, 'SYN', 1, [make_row(1, 'ACGT' * 40)])
+    window = MainWindow()
+    window.result = MergeService().process(root, 1)
+    window._populate_result()
+    batch = window._ensure_external_batch()
+    window.imgt_result = results(batch)
+    window.report_button.setEnabled(False)
+    window._external_finished()
+    assert window.report_button.isEnabled()
     window.close()

@@ -186,6 +186,8 @@ class ImgtRecord:
     identity_source: str = "IMGT AIRR v_identity"
     numbered_aa: tuple[tuple[int, str], ...] = ()
     numbered_aa_source: str = ""
+    identity_with_indel_numerator: int | None = None
+    identity_with_indel_denominator: int | None = None
 
     @property
     def selected_identity_percent(self) -> float | None:
@@ -198,6 +200,12 @@ class ImgtRecord:
         if self.productive is True and self.identity_with_indel_events is not None:
             return 'IMGT V-REGION identity % (with ins/del events); right/bracketed value'
         return self.identity_source
+
+    @property
+    def selected_identity_counts(self) -> tuple[int | None, int | None]:
+        if self.productive is True and self.identity_with_indel_events is not None:
+            return self.identity_with_indel_numerator, self.identity_with_indel_denominator
+        return self.v_identity_numerator, self.v_identity_denominator
 
 
 @dataclass(frozen=True)
@@ -414,6 +422,11 @@ def parse_imgt_full_result(
             io.StringIO(raw_files["5_AA-sequences.txt"]), delimiter="\t"
         )
     }
+    numbered_rows = list(csv.DictReader(io.StringIO(raw_files.get('4_IMGT-gapped-AA-sequences.txt', '')), delimiter='\t'))
+    numbered_ids = [row.get('Sequence ID', '') for row in numbered_rows]
+    if len(numbered_ids) != len(set(numbered_ids)) or not set(numbered_ids).issubset(batch.candidate_ids):
+        raise ExternalAnalysisError('IMGT numbered amino acid IDs do not match the batch')
+    numbered_by_id = {row['Sequence ID']: row for row in numbered_rows}
     candidates = batch.by_id()
     records: list[ImgtRecord] = []
     observed: list[str] = []
@@ -439,8 +452,13 @@ def parse_imgt_full_result(
         numerator, denominator = _identity_counts(
             row.get("V-REGION identity nt") or ""
         )
+        event_numerator, event_denominator = _identity_counts(row.get('V-REGION identity nt (with ins/del events)') or '')
         aa_row = aa_by_id.get(external_id, {})
         cdr3_aa = (aa_row.get("CDR3-IMGT") or "").strip()
+        fr4 = (numbered_by_id.get(external_id, {}).get('FR4-IMGT') or '').strip().upper()
+        # IMGT labels FR4 as AA 118–128. Only its first four explicit
+        # positions are required; unknown/gap characters remain unknown.
+        numbered = tuple(enumerate(fr4[:4], start=118)) if fr4 else ()
         records.append(
             ImgtRecord(
                 external_id=external_id,
@@ -455,6 +473,8 @@ def parse_imgt_full_result(
                 raw_identity_with_indel_events=row.get("V-REGION identity % (with ins/del events)") or "",
                 identity_with_indel_events=_strict_identity(row.get("V-REGION identity % (with ins/del events)")),
                 identity_source="IMGT 1_Summary.txt V-REGION identity %",
+                numbered_aa=numbered,
+                numbered_aa_source='IMGT 4_IMGT-gapped-AA-sequences.txt FR4-IMGT (AA 118–121)' if numbered else '',
                 junction="",
                 junction_aa=(row.get("AA JUNCTION") or "").strip(),
                 insertions=(row.get("V-REGION insertions") or "").strip(),
@@ -466,6 +486,8 @@ def parse_imgt_full_result(
                 ).strip(),
                 v_identity_numerator=numerator,
                 v_identity_denominator=denominator,
+                identity_with_indel_numerator=event_numerator,
+                identity_with_indel_denominator=event_denominator,
                 cdr3_aa=cdr3_aa,
                 cdr3_aa_length=len(cdr3_aa) if cdr3_aa else None,
                 junction_aa_length=_int_value(row.get("CDR3-IMGT length")),
@@ -730,6 +752,16 @@ def save_batch_mapping(run_directory: Path, batch: ExternalBatch) -> Path:
         ],
     }
     path = directory / "mapping.audit.json"
+    if path.exists():
+        existing = json.loads(path.read_text(encoding='utf-8'))
+        if existing.get('session_id') != batch.session_id:
+            raise ValueError('Local mapping session mismatch')
+        merged = {item['external_id']: item for item in existing['candidates']}
+        for item in payload['candidates']:
+            if item['external_id'] in merged and merged[item['external_id']] != item:
+                raise ValueError('Local mapping ID binding changed')
+            merged[item['external_id']] = item
+        payload['candidates'] = list(merged.values())
     _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
     return path
 

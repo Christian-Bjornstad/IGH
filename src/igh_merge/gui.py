@@ -50,6 +50,7 @@ from .external import (
     save_arrest_result,
     save_batch_mapping,
     save_imgt_result,
+    sequence_sha256,
 )
 from .edge_cdp import (
     EdgeCdpError,
@@ -430,6 +431,10 @@ class MainWindow(QMainWindow):
         candidate_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         candidate_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         candidate_header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
+        candidate_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        candidate_header.setSectionResizeMode(10, QHeaderView.ResizeMode.Interactive)
+        self.candidate_table.setColumnWidth(3, 200)
+        self.candidate_table.setColumnWidth(10, 280)
         candidate_header.setMinimumSectionSize(58)
         self.candidate_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -698,6 +703,7 @@ class MainWindow(QMainWindow):
 
         self._fill_control_table(self.result.qc.controls)
         self._fill_candidates()
+        self.capture_button.setEnabled(True)
         self.row_card.value.setText(str(len(self.result.rows)))
         self.control_card.value.setText(
             str(sum(item.status == "FEIL" for item in self.result.qc.controls))
@@ -833,6 +839,12 @@ class MainWindow(QMainWindow):
         if (
             self.external_batch is not None
             and tuple(item.row_index for item in self.external_batch.candidates) == selected
+            and all(candidate.sequence_sha256 == sequence_sha256(self.result.rows[candidate.row_index].source.sequence)
+                    and candidate.molecule_type == self.result.rows[candidate.row_index].molecule_type
+                    and candidate.target == self.result.rows[candidate.row_index].target
+                    and candidate.rank == self.result.rows[candidate.row_index].source.rank
+                    and candidate.sample == self.result.rows[candidate.row_index].sample
+                    for candidate in self.external_batch.candidates)
         ):
             return self.external_batch
         self.external_batch = create_external_batch(
@@ -842,7 +854,7 @@ class MainWindow(QMainWindow):
         self.imgt_result = None
         self.arrest_result = None
         self.report_button.setEnabled(False)
-        self.capture_button.setEnabled(False)
+        self.capture_button.setEnabled(bool(self.result))
         self.view_evidence_button.setEnabled(False)
         self.evidence_manifest = None
         self._imgt_status_by_row.clear()
@@ -933,29 +945,35 @@ class MainWindow(QMainWindow):
         service: str,
         batch: ExternalBatch,
         result: object,
-    ) -> None:
+    ) -> bool:
         if not self.result:
             return
         if isinstance(result, AnalysisJobResult):
+            accepted = []
+            errors = dict(result.errors)
             for part, part_result in result.parts:
-                self._external_succeeded(service, part, part_result)
+                if self._external_succeeded(service, part, part_result):
+                    accepted.append((part, part_result))
+                else:
+                    errors.update({c.external_id: 'Local result could not be saved/applied' for c in part.candidates})
             statuses = self._imgt_status_by_row if service == "IMGT" else self._arrest_status_by_row
-            for external_id, error in result.errors.items():
+            for external_id, error in errors.items():
                 statuses[batch.by_id()[external_id].row_index] = f"Failed: {error}"
             if service == "IMGT":
-                records = tuple(record for _, part in result.parts for record in part.records)
-                first = result.parts[0][1] if result.parts else None
+                records = tuple(record for _, part in accepted for record in part.records)
+                first = accepted[0][1] if accepted else None
                 self.imgt_result = ImgtBatchResult(first.parameters, records, '', '') if first else None
                 self.capture_button.setEnabled(bool(records))
-                self.report_button.setEnabled(result.complete and bool(records))
+                self.report_button.setEnabled(not errors and bool(records))
             else:
-                records = tuple(record for _, part in result.parts for record in part.records)
+                records = tuple(record for _, part in accepted for record in part.records)
                 self.arrest_result = ArrestBatchResult(records, '', '') if records else None
+                self.report_button.setEnabled(self._has_complete_imgt())
             self._refresh_external_table()
-            self.external_status.setText(f"{service}: {len(records)} completed, {len(result.errors)} failed")
-            self._set_status(f"{service} partial failure" if result.errors else f"{service} completed",
-                             "error" if result.errors else "success")
-            return
+            self.external_status.setText(f"{service}: {len(records)} completed, {len(errors)} failed")
+            self._set_status(f"{service} partial failure" if errors else f"{service} completed",
+                             "error" if errors else "success")
+            return not errors
         try:
             if service == "IMGT":
                 if not isinstance(result, ImgtBatchResult):
@@ -1005,10 +1023,15 @@ class MainWindow(QMainWindow):
         except (OSError, PrivacyError, TypeError, ValueError) as exc:
             self.external_status.setText(f"{service} result could not be saved: {exc}")
             QMessageBox.critical(self, f"{service} failed", str(exc))
-            return
+            return False
         self._refresh_external_table()
         self.external_status.setText(message)
         self._set_status(f"{service} completed", "success")
+        return True
+
+    def _has_complete_imgt(self) -> bool:
+        return bool(self.imgt_result and self.external_batch and
+                    set(record.external_id for record in self.imgt_result.records) == set(self.external_batch.candidate_ids))
 
     def _generate_reports(self) -> None:
         if not self.result or not self.external_batch or not self.imgt_result:
@@ -1044,7 +1067,8 @@ class MainWindow(QMainWindow):
         self.validate_button.setEnabled(True)
         self.candidate_table.setEnabled(True)
         self.select_candidates_button.setEnabled(True)
-        self.capture_button.setEnabled(bool(self.imgt_result and self.imgt_result.records))
+        self.capture_button.setEnabled(bool(self.result))
+        self.report_button.setEnabled(self._has_complete_imgt())
         if self._external_thread:
             self._external_thread.deleteLater()
         self._external_worker = None
@@ -1053,10 +1077,17 @@ class MainWindow(QMainWindow):
     def _capture_imgt_evidence(self) -> None:
         if self._external_thread and self._external_thread.isRunning():
             return
-        if not self.result or not self.external_batch:
+        if not self.result:
+            return
+        try:
+            batch = self._ensure_external_batch()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'IMGT evidence', str(exc))
             return
         if not edge_cdp_available():
             QMessageBox.critical(self, 'IMGT evidence', 'Microsoft Edge is not available.')
+            return
+        if PayloadDialog('IMGT Detailed evidence', IMGT_URL, batch.fasta, self).exec() != QDialog.DialogCode.Accepted:
             return
         from datetime import datetime, timezone
         directory = (self.result.manifest.run_directory / f'{self.external_batch.run_date}_imgt_evidence'

@@ -29,6 +29,22 @@ def test_invalid_identity_rejected():
         parse_imgt_full_result(full_files(identity='unreadable'), candidate_batch())
 
 
+def test_fr4_numbering_is_imported_from_imgt_label():
+    files = full_files()
+    files['4_IMGT-gapped-AA-sequences.txt'] = 'Sequence ID\tFR4-IMGT\nSEQ-ABC123\tWGQGTLVTVSS'
+    record = parse_imgt_full_result(files, candidate_batch()).records[0]
+    assert dict(record.numbered_aa)[118] == 'W'
+    assert imgt_observations.observe_numbered_aa(dict(record.numbered_aa), source=record.numbered_aa_source)[2].status == 'påvist'
+
+
+def test_identity_counts_follow_selected_event_value():
+    files = full_files()
+    lines = files['1_Summary.txt'].splitlines()
+    files['1_Summary.txt'] = lines[0] + '\tV-REGION identity nt\tV-REGION identity nt (with ins/del events)\n' + lines[1] + '\t98/100\t99/100'
+    record = parse_imgt_full_result(files, candidate_batch()).records[0]
+    assert record.selected_identity_counts == (99, 100)
+
+
 @pytest.mark.parametrize('aa,trp,phe,gxg', [
     ({118: 'W', 119: 'G', 120: 'A', 121: 'G'}, 'påvist', 'ikke påvist', 'påvist'),
     ({118: 'F', 119: 'A', 120: 'G', 121: 'G'}, 'ikke påvist', 'påvist', 'ikke påvist'),

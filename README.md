@@ -57,7 +57,7 @@ Valider Leader + FR1
 1. Velg kjøringsmappen.
 2. Valider oppdagede Leader- og FR1-filer.
 3. Kontroller kjøringens kontrollstatus.
-4. Velg de aktuelle Leader-kandidatene.
+4. Velg Leader og FR1. Alle med uavrundet reads ≥2,5 % foreslås, også ikke-produktive.
 5. Forhåndsvis nøyaktig FASTA-payload før eventuell ekstern sending.
 6. Kjør IMGT og/eller ARResT etter eksplisitt bekreftelse.
 7. Eksporter merged-arbeidsboken og eventuelle rapportutkast.
@@ -176,8 +176,9 @@ som standard.
 
 ## IMGT og ARResT
 
-- Maksimalt 50 sekvenser sendes per batch.
-- Kun valgte Leader-sekvenser inngår i payloaden.
+- Arbeidskøen deler utvalget i delanalyser med maksimalt 50 sekvenser. IMGT-delanalyser har én molekyltype.
+- Valgte Leader- og FR1-sekvenser inngår i payloaden. Reads ≥2,5 % vises i fet skrift, uavhengig av funksjonalitet.
+- Søk etter prøve/target og targetfilter endrer bare visningen; utvalgstelleren viser hele utvalget.
 - Gule kandidater har `In-frame=Y`, `No Stop codon=Y` og enten minst 2,5 %
   reads eller eksakt FR1-støtte på minst 2,5 %.
 - IMGT bruker human, IGH, D-gene alignment, V-region-indelsøk og subset-søk.
@@ -189,18 +190,21 @@ som standard.
 ### Rapportutkast
 
 Etter fullført IMGT kan **Generate report draft** opprette lokale PDF- og
-Word-utkast per prøve og `report_data.audit.json` under:
+Word-utkast per prøve, tilhørende `analysis.xlsx`, validerte bevis og `report_data.audit.json` under:
 
 ```text
 YYYY_MM_DD_reports\<sesjon>
 ```
 
 Rapportdata inkluderer blant annet dybde, Leader/FR1-andel, V/D/J-alleler,
-VH-identitet, funksjonalitet, CDR3, indels og subset.
+VH-identitet med kilde og begge råverdier, funksjonalitet, CDR3, indels og separate subsetkilder. J-TRP/J-PHE og G-X-G er observasjoner til manuell vurdering. Nummererte FR4-IMGT-data brukes når tilgjengelig; ellers vises «ikke vurdert».
 
 **Capture IMGT evidence (Edge)** lagrer PNG-utsnitt separat under
-`YYYY_MM_DD_imgt_evidence\<ekstern-ID>`. Bildene bygges foreløpig ikke inn i
-rapportutkastene. Edge-flyten må prøves på den administrerte PC-en.
+`YYYY_MM_DD_imgt_evidence\<sesjon>\<tidspunkt>\<ekstern-ID>`, med full kopierbar summary-tekst og manifest. **View IMGT evidence** viser tekst og bilder. Capture kan startes direkte etter validering, uten HTTP-analyse først. Rapportpakken inkluderer tilhørende bevis når de er hentet. ID, sekvenshash, sesjon og bildefilens hash valideres før bruk.
+
+ARResT bruker den verifiserte AssignSubsets-mottakeren på bat.infspire.org. Ingen uavhengig kompatibel reserve er verifisert. Timeout/5xx gir maksimalt to forsøk med samme payload. Format-, ID-, hash- og TLS-feil gjentas ikke.
+
+Samlet variantreanalyse er utsatt: B er Synthesis view, men brukerens ønskede «No»-valg er ikke entydig. Live Edge-crop og Word-paginering kunne ikke verifiseres i dette miljøet. Se [verifikasjon og begrensninger](docs/external-verification.md).
 
 ## Kommandolinje
 

@@ -36,6 +36,13 @@ def test_stable_id_and_sequence_change():
     assert create_external_batch('2099_01_02', [(0, row)]).candidate_ids != first.candidate_ids
 
 
+def test_excel_fasta_uses_assigned_external_id():
+    row = merged_row()
+    batch = create_external_batch('2099_01_02', [(0, row)])
+    assert row.fasta == batch.fasta.rstrip('\n')
+    assert row.sample not in row.fasta
+
+
 def test_duplicate_existing_ids_rejected():
     rows = [merged_row(), merged_row()]
     for row in rows:
