@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import math
 import json
 import os
 import re
@@ -179,6 +180,24 @@ class ImgtRecord:
     potential_indel: str = ""
     sequence_category: str = ""
     analyzed_length: int | None = None
+    raw_identity_percent: str = ""
+    raw_identity_with_indel_events: str = ""
+    identity_with_indel_events: float | None = None
+    identity_source: str = "IMGT AIRR v_identity"
+    numbered_aa: tuple[tuple[int, str], ...] = ()
+    numbered_aa_source: str = ""
+
+    @property
+    def selected_identity_percent(self) -> float | None:
+        if self.productive is True and self.identity_with_indel_events is not None:
+            return self.identity_with_indel_events
+        return self.v_identity_percent
+
+    @property
+    def selected_identity_source(self) -> str:
+        if self.productive is True and self.identity_with_indel_events is not None:
+            return 'IMGT V-REGION identity % (with ins/del events); right/bracketed value'
+        return self.identity_source
 
 
 @dataclass(frozen=True)
@@ -251,6 +270,15 @@ def _identity_percent(value: str | None) -> float | None:
     if parsed is None:
         return None
     return parsed * 100 if 0 <= parsed <= 1 else parsed
+
+
+def _strict_identity(value: str | None, *, fraction: bool = False) -> float | None:
+    if not value or not value.strip():
+        return None
+    parsed = _float_value(value)
+    if parsed is None or not math.isfinite(parsed) or not 0 <= parsed <= (1 if fraction else 100):
+        raise ValueError('Unreadable IMGT identity value')
+    return parsed * 100 if fraction else parsed
 
 
 def _validate_response_size(content: bytes) -> None:
@@ -333,7 +361,8 @@ def parse_imgt_result(
                 v_call=(row.get("v_call") or "").strip(),
                 d_call=(row.get("d_call") or "").strip(),
                 j_call=(row.get("j_call") or "").strip(),
-                v_identity_percent=_identity_percent(row.get("v_identity")),
+                v_identity_percent=_strict_identity(row.get("v_identity"), fraction=True),
+                raw_identity_percent=row.get("v_identity") or "",
                 junction=(row.get("junction") or "").strip(),
                 junction_aa=(row.get("junction_aa") or "").strip(),
                 insertions=(row.get("insertions") or "").strip(),
@@ -415,11 +444,15 @@ def parse_imgt_full_result(
                 external_id=external_id,
                 productive=productive,
                 stop_codon=None,
-                vj_in_frame="in-frame" in junction_frame.lower(),
+                vj_in_frame=True if junction_frame.lower() == 'in-frame' else False if junction_frame.lower() == 'out-of-frame' else None,
                 v_call=(row.get("V-GENE and allele") or "").strip(),
                 d_call=(row.get("D-GENE and allele") or "").strip(),
                 j_call=(row.get("J-GENE and allele") or "").strip(),
-                v_identity_percent=_float_value(row.get("V-REGION identity %")),
+                v_identity_percent=_strict_identity(row.get("V-REGION identity %")),
+                raw_identity_percent=row.get("V-REGION identity %") or "",
+                raw_identity_with_indel_events=row.get("V-REGION identity % (with ins/del events)") or "",
+                identity_with_indel_events=_strict_identity(row.get("V-REGION identity % (with ins/del events)")),
+                identity_source="IMGT 1_Summary.txt V-REGION identity %",
                 junction="",
                 junction_aa=(row.get("AA JUNCTION") or "").strip(),
                 insertions=(row.get("V-REGION insertions") or "").strip(),
@@ -796,6 +829,14 @@ def apply_imgt_result(
         details = f"IMGT {version}: {functionality}"
         if record.d_call:
             details += f"; D={record.d_call}"
+        from .imgt_observations import j_call_notes, record_observation_text
+        if record.selected_identity_percent is not None:
+            details += f"; identity={record.selected_identity_percent:g}% ({record.selected_identity_source})"
+        details += f"; J={record.j_call}"
+        notes = j_call_notes(record.j_call)
+        if notes:
+            details += f"; {notes}"
+        details += '; ' + record_observation_text(record)
         row.comment = _append_comment(row.comment, details)
 
 

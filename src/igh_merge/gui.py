@@ -944,6 +944,8 @@ class MainWindow(QMainWindow):
                         if record.productive is False
                         else "unknown"
                     )
+                    if record.selected_identity_percent is not None:
+                        status += f"; {record.selected_identity_percent:g}%"
                     self._imgt_status_by_row[row_index] = status
                 version = result.program_version or "unknown version"
                 message = (
@@ -1132,6 +1134,9 @@ class MainWindow(QMainWindow):
             }
             for column, value in values.items():
                 self.candidate_table.item(table_row, column).setText(value)
+            comment_cell = self.candidate_table.item(table_row, 10)
+            comment_cell.setForeground(QColor(Palette.error if 'IGHJ5*03: pseudogene' in comment_cell.text() else Palette.ink))
+            comment_cell.setToolTip(comment_cell.text())
 
     def _export_excel(self) -> None:
         if not self.result:
