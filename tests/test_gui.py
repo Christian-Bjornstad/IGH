@@ -126,7 +126,7 @@ def test_gui_creates_pseudonymous_external_payload(run_factory, make_row):
     assert app is not None
 
 
-def test_gui_yellow_selection_excludes_nonfunctional_high_read_row(
+def test_gui_analysis_includes_nonfunctional_high_read_row(
     run_factory, make_row
 ):
     app = QApplication.instance() or QApplication([])
@@ -153,7 +153,10 @@ def test_gui_yellow_selection_excludes_nonfunctional_high_read_row(
     window._populate_result()
 
     assert window.candidate_table.item(0, 0).checkState() == Qt.CheckState.Checked
-    assert window.candidate_table.item(1, 0).checkState() == Qt.CheckState.Unchecked
+    assert window.candidate_table.item(1, 0).checkState() == Qt.CheckState.Checked
+    assert window.candidate_table.rowCount() == 3
+    assert window.candidate_table.item(2, 4).text() == "FR1"
+    assert window.candidate_table.item(1, 6).font().bold()
     assert (
         window.candidate_table.item(0, 0).background().color().name().upper()
         == "#FFFF00"
@@ -166,7 +169,7 @@ def test_gui_yellow_selection_excludes_nonfunctional_high_read_row(
     assert app is not None
 
 
-def test_gui_yellow_selection_includes_low_leader_with_exact_fr1_support(
+def test_gui_yellow_support_does_not_override_analysis_threshold(
     run_factory, make_row
 ):
     app = QApplication.instance() or QApplication([])
@@ -189,7 +192,8 @@ def test_gui_yellow_selection_includes_low_leader_with_exact_fr1_support(
     window._populate_result()
 
     assert window.result.rows[1].comment == "(Supports Leader-1)"
-    assert window.candidate_table.item(0, 0).checkState() == Qt.CheckState.Checked
+    assert window.candidate_table.item(0, 0).checkState() == Qt.CheckState.Unchecked
+    assert window.candidate_table.item(1, 0).checkState() == Qt.CheckState.Checked
     assert (
         window.candidate_table.item(0, 0).background().color().name().upper()
         == "#FFFF00"

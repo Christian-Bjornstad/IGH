@@ -5,6 +5,12 @@ from collections.abc import Sequence
 from .models import MergedRow
 
 
+def analysis_candidate_indices(rows: Sequence[MergedRow]) -> frozenset[int]:
+    """Analysis eligibility is independent of preliminary functionality."""
+    return frozenset(i for i, row in enumerate(rows)
+                     if row.target in {"Leader", "FR1"} and row.source.percent_total_reads >= 2.5)
+
+
 def is_functional_group_candidate(
     rows: Sequence[MergedRow], result_index: int
 ) -> bool:

@@ -145,3 +145,5 @@ the merged sheet remains compatible and traceability is not compressed away.
 5. Local validation against historical, non-versioned clinical results.
 6. Terms and professional documentation.
 7. Clinical pilot and sign-off before routine use.
+
+Current selection: all Leader and FR1 >=2.5% (unrounded), including nonproductive sequences. The older Leader/Y-Y selection below is superseded for external analysis.

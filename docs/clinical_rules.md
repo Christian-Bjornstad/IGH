@@ -38,3 +38,6 @@ Leader sequences are sent to IMGT and ARResT:
   in CDR3.
 
 This is grouping and selection, not automatic clinical classification.
+
+## Analysis eligibility (2026-09-30)
+All Leader and FR1 rows with unrounded reads >=2.5% are proposed for IMGT, regardless of Y/N functionality. Yellow functional grouping is separate. Molecule type uses a case-insensitive cDNA token delimited by punctuation/whitespace. External IDs remain stable for an unchanged sequence.

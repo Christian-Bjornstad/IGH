@@ -109,12 +109,23 @@ def create_external_batch(
 
     candidates: list[ExternalCandidate] = []
     used_ids: set[str] = set()
+    seen_rows: set[int] = set()
     for row_index, row in selected:
-        external_id = ""
+        if row_index in seen_rows:
+            raise ValueError("duplicate row index")
+        seen_rows.add(row_index)
+        sequence = normalize_sequence(row.source.sequence)
+        digest = sequence_sha256(sequence)
+        external_id = row.external_id
+        if external_id and not re.fullmatch(r"SEQ-[A-F0-9]{6,24}", external_id):
+            raise ValueError("Invalid external ID")
+        if external_id and external_id in used_ids:
+            raise ValueError("duplicate external ID")
+        if row.external_sequence_sha256 and row.external_sequence_sha256 != digest:
+            external_id = ""
         while not external_id or external_id in used_ids:
             external_id = f"SEQ-{secrets.token_hex(6).upper()}"
         used_ids.add(external_id)
-        sequence = normalize_sequence(row.source.sequence)
         candidates.append(
             ExternalCandidate(
                 external_id=external_id,
@@ -127,6 +138,14 @@ def create_external_batch(
                 sequence_sha256=sequence_sha256(sequence),
             )
         )
+    # Validate the whole selection before updating local rows.
+    for (_, row), candidate in zip(selected, candidates):
+        if row.external_sequence_sha256 and row.external_sequence_sha256 != candidate.sequence_sha256:
+            row.subset = ""
+            row.comment = " | ".join(part for part in row.comment.split(" | ")
+                                     if not part.startswith(("IMGT ", "ARResT:")))
+        row.external_id = candidate.external_id
+        row.external_sequence_sha256 = candidate.sequence_sha256
     return ExternalBatch(
         session_id=secrets.token_hex(8).upper(),
         run_date=run_date,
@@ -662,6 +681,7 @@ def save_batch_mapping(run_directory: Path, batch: ExternalBatch) -> Path:
                 "row_index": item.row_index,
                 "sample": item.sample,
                 "target": item.target,
+                "molecule_type": item.molecule_type,
                 "rank": item.rank,
                 "sequence_sha256": item.sequence_sha256,
             }

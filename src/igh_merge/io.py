@@ -117,7 +117,7 @@ class SummaryReader:
                     merge_count=parse_integer(record[6]),
                     v_gene=record[7].strip(),
                     j_gene=record[8].strip(),
-                    percent_total_reads=round(float(parse_number(record[9])), 2),
+                    percent_total_reads=float(parse_number(record[9])),
                     cumulative_percent=round(float(parse_number(record[10])), 2),
                     mutation_rate=None if mutation_rate is None else round(float(mutation_rate), 2),
                     in_frame=record[12].strip().upper(),
@@ -149,7 +149,7 @@ def detect_molecule_type(sample: str) -> MoleculeType:
     """
     if not sample:
         return "gDNA"
-    if re.search(r"(?:^|_)(?:cDNA|cdna)(?:$|_)", sample, flags=re.IGNORECASE):
+    if re.search(r"(?:^|[^A-Za-z0-9])cdna(?:$|[^A-Za-z0-9])", sample, flags=re.IGNORECASE):
         return "cDNA"
     return "gDNA"
 

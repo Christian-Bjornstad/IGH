@@ -90,6 +90,7 @@ class MergedRow:
     other_samples: str = ""
     subset: str = ""
     comment: str = ""
+    external_sequence_sha256: str = ""
 
     @property
     def fasta(self) -> str:

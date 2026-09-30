@@ -57,7 +57,7 @@ from .edge_cdp import (
     edge_cdp_available,
     submit_imgt_detailed,
 )
-from .candidates import is_functional_group_candidate
+from .candidates import analysis_candidate_indices, is_functional_group_candidate
 from .excel import HEADERS
 from .io import ValidationError
 from .models import MergeResult, QcItem
@@ -450,7 +450,7 @@ class MainWindow(QMainWindow):
         local_label.setObjectName("ActionLabel")
         external_label = QLabel("EXTERNAL")
         external_label.setObjectName("ActionLabel")
-        self.select_candidates_button = QPushButton("Select yellow Leader candidates")
+        self.select_candidates_button = QPushButton("Select reads ≥2.5 %")
         self.select_candidates_button.clicked.connect(self._select_candidates)
         preview_fasta = QPushButton("Preview FASTA")
         preview_fasta.clicked.connect(self._preview_fasta)
@@ -718,8 +718,6 @@ class MainWindow(QMainWindow):
         assert self.result is not None
         self.candidate_table.setRowCount(0)
         for result_index, item in enumerate(self.result.rows):
-            if item.target != "Leader":
-                continue
             row = self.candidate_table.rowCount()
             self.candidate_table.insertRow(row)
             check = QTableWidgetItem()
@@ -727,7 +725,7 @@ class MainWindow(QMainWindow):
             is_functional_group = self._is_functional_group_candidate(result_index)
             check.setCheckState(
                 Qt.CheckState.Checked
-                if is_functional_group
+                if result_index in analysis_candidate_indices(self.result.rows)
                 else Qt.CheckState.Unchecked
             )
             check.setData(Qt.ItemDataRole.UserRole, result_index)
@@ -746,6 +744,9 @@ class MainWindow(QMainWindow):
             ]
             for column, value in enumerate(values, start=1):
                 self.candidate_table.setItem(row, column, QTableWidgetItem(str(value)))
+            font = self.candidate_table.item(row, 6).font()
+            font.setBold(item.source.percent_total_reads >= 2.5)
+            self.candidate_table.item(row, 6).setFont(font)
             if is_functional_group:
                 for column in range(self.candidate_table.columnCount()):
                     self.candidate_table.item(row, column).setBackground(
@@ -778,7 +779,7 @@ class MainWindow(QMainWindow):
             )
             self.candidate_table.item(row, 0).setCheckState(
                 Qt.CheckState.Checked
-                if self._is_functional_group_candidate(result_index)
+                if self.result and result_index in analysis_candidate_indices(self.result.rows)
                 else Qt.CheckState.Unchecked
             )
 
@@ -803,7 +804,7 @@ class MainWindow(QMainWindow):
             raise ValueError("Validate a run before selecting sequences")
         selected = self._selected_result_indices()
         if not selected:
-            raise ValueError("Select at least one Leader sequence")
+            raise ValueError("Select at least one sequence")
         if (
             self.external_batch is not None
             and tuple(item.row_index for item in self.external_batch.candidates) == selected
