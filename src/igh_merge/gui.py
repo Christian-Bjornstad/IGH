@@ -64,6 +64,8 @@ from .models import MergeResult, QcItem
 from .privacy import PrivacyError, ensure_outside_git
 from .reports import generate_clinical_report_package
 from .analysis_jobs import AnalysisJobResult, run_analysis_job
+from .evidence_ui import EvidenceWorker, EvidenceDialog
+from .evidence import EvidenceManifest
 from .service import MergeService
 
 
@@ -469,6 +471,10 @@ class MainWindow(QMainWindow):
         )
         self.capture_button.setEnabled(False)
         self.capture_button.clicked.connect(self._capture_imgt_evidence)
+        self.view_evidence_button = QPushButton('View IMGT evidence')
+        self.view_evidence_button.setEnabled(False)
+        self.view_evidence_button.clicked.connect(self._view_evidence)
+        self.evidence_manifest = None
         self.report_button = QPushButton("Generate report draft")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
@@ -481,6 +487,7 @@ class MainWindow(QMainWindow):
         action_grid.addWidget(self.send_arrest_button, 1, 2)
         action_grid.addWidget(self.capture_button, 1, 3)
         action_grid.addWidget(self.report_button, 2, 1)
+        action_grid.addWidget(self.view_evidence_button, 2, 2)
         action_grid.setColumnStretch(4, 1)
         layout.addWidget(action_bar)
 
@@ -649,6 +656,8 @@ class MainWindow(QMainWindow):
         self._arrest_status_by_row.clear()
         self.capture_button.setEnabled(False)
         self.report_button.setEnabled(False)
+        self.view_evidence_button.setEnabled(False)
+        self.evidence_manifest = None
         try:
             self.result = self.service.process(Path(self.run_edit.text()), self.expected_spin.value())
         except (ValidationError, OSError) as exc:
@@ -818,6 +827,8 @@ class MainWindow(QMainWindow):
         self.arrest_result = None
         self.report_button.setEnabled(False)
         self.capture_button.setEnabled(False)
+        self.view_evidence_button.setEnabled(False)
+        self.evidence_manifest = None
         self._imgt_status_by_row.clear()
         self._arrest_status_by_row.clear()
         external_ids = {
@@ -877,6 +888,8 @@ class MainWindow(QMainWindow):
         self.send_imgt_button.setEnabled(False)
         self.send_arrest_button.setEnabled(False)
         self.validate_button.setEnabled(False)
+        self.capture_button.setEnabled(False)
+        self.report_button.setEnabled(False)
         self.candidate_table.setEnabled(False)
         self.select_candidates_button.setEnabled(False)
         self.external_status.setText(
@@ -892,6 +905,8 @@ class MainWindow(QMainWindow):
         worker.failed.connect(partial(self._external_failed, service))
         worker.succeeded.connect(thread.quit)
         worker.failed.connect(thread.quit)
+        worker.succeeded.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
         thread.finished.connect(self._external_finished)
         self._external_thread = thread
         self._external_worker = worker
@@ -935,6 +950,7 @@ class MainWindow(QMainWindow):
                 apply_imgt_result(self.result.rows, batch, result)
                 self.imgt_result = result
                 self.report_button.setEnabled(True)
+                self.capture_button.setEnabled(True)
                 for record in result.records:
                     row_index = batch.by_id()[record.external_id].row_index
                     status = (
@@ -1011,96 +1027,63 @@ class MainWindow(QMainWindow):
         self.validate_button.setEnabled(True)
         self.candidate_table.setEnabled(True)
         self.select_candidates_button.setEnabled(True)
-        if self._external_worker:
-            self._external_worker.deleteLater()
+        self.capture_button.setEnabled(bool(self.imgt_result and self.imgt_result.records))
         if self._external_thread:
             self._external_thread.deleteLater()
         self._external_worker = None
         self._external_thread = None
 
     def _capture_imgt_evidence(self) -> None:
-        """Open a managed Edge instance and capture IMGT result screenshots.
-
-        The user wants the IMGT result page screenshotted for sections 1-6
-        and 9. The page only appears after the user manually pastes the
-        pseudonymized FASTA into IMGT (we never submit patient data here),
-        so the workflow is: open Edge to the IMGT search page for the
-        correct molecule type, ask the user to paste + submit, then walk
-        through the numbered sections and save PNGs into
-        ``<run>/<date>_imgt_evidence/<external_id>/``.
-        """
-        if not self.imgt_result or not self.result:
-            QMessageBox.warning(
-                self,
-                "IMGT evidence",
-                "Run IMGT first — the capture uses the IMGT external IDs.",
-            )
+        if self._external_thread and self._external_thread.isRunning():
+            return
+        if not self.result or not self.external_batch:
             return
         if not edge_cdp_available():
-            QMessageBox.critical(
-                self,
-                "Edge not available",
-                "Microsoft Edge or the websocket-client dependency is missing. "
-                "Ask IT to expose the managed Edge installation before using "
-                "IMGT evidence capture.",
-            )
+            QMessageBox.critical(self, 'IMGT evidence', 'Microsoft Edge is not available.')
             return
-        run_dir = self.result.manifest.run_directory
-        evidence_dir = run_dir / f"{self.result.manifest.run_date}_imgt_evidence"
+        from datetime import datetime, timezone
+        directory = (self.result.manifest.run_directory / f'{self.external_batch.run_date}_imgt_evidence'
+                     / self.external_batch.session_id / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
         try:
-            evidence_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            QMessageBox.critical(self, "Cannot create evidence folder", str(exc))
+            ensure_outside_git(directory)
+            save_batch_mapping(self.result.manifest.run_directory, self.external_batch)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, 'IMGT evidence', str(exc))
             return
-        candidates = self.external_batch.by_id() if self.external_batch else {}
-        records = list(self.imgt_result.records)
-        QMessageBox.information(
-            self,
-            "Edge evidence capture",
-            "Microsoft Edge will open and IMGT/V-QUEST Detailed view will run "
-            "once per pseudonymized External ID. IGHV will capture the summary, "
-            "V/D/J alignments, optional cDNA L/C alignments, junction, V-REGION "
-            "translation. Do not close Edge "
-            "until capture is complete.",
-        )
-        self._set_status("IMGT evidence capture in progress", "busy")
-        try:
-            from .edge_cdp import launch_edge
-            with launch_edge(
-                evidence_dir / "edge-profile",
-                background=False,
-            ) as session:
-                page = session.page
-                captured: list[Path] = []
-                for record in records:
-                    candidate = candidates.get(record.external_id)
-                    if candidate is None:
-                        raise EdgeCdpError(
-                            f"No submitted sequence found for {record.external_id}."
-                        )
-                    submit_imgt_detailed(
-                        page,
-                        external_id=record.external_id,
-                        sequence=candidate.sequence,
-                        molecule_type=candidate.molecule_type,
-                    )
-                    sample_dir = evidence_dir / record.external_id
-                    captured.extend(
-                        capture_imgt_evidence(
-                            page,
-                            sample_dir,
-                            include_full_page=False,
-                        )
-                    )
-                self.external_status.setText(
-                    f"Captured {len(captured)} IMGT screenshots "
-                    f"for {len(records)} sequence(s) in {evidence_dir}."
-                )
-        except (EdgeCdpError, EdgeCdpTimeout, OSError) as exc:
-            self._set_status("IMGT capture failed", "error")
-            QMessageBox.critical(self, "IMGT evidence failed", str(exc))
-            return
-        self._set_status("IMGT evidence captured", "success")
+        for control in (self.send_imgt_button, self.send_arrest_button, self.validate_button,
+                        self.candidate_table, self.select_candidates_button, self.capture_button, self.report_button):
+            control.setEnabled(False)
+        self.external_progress.setVisible(True)
+        self._set_status('IMGT evidence in progress', 'busy')
+        thread = QThread(self)
+        worker = EvidenceWorker(self.external_batch, directory)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self.external_status.setText)
+        worker.succeeded.connect(self._evidence_succeeded)
+        worker.failed.connect(partial(self._external_failed, 'IMGT evidence'))
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.succeeded.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        thread.finished.connect(self._external_finished)
+        self._external_thread, self._external_worker = thread, worker
+        thread.start()
+
+    def _evidence_succeeded(self, result) -> None:
+        manifest, errors = result
+        self.evidence_manifest = manifest
+        self.view_evidence_button.setEnabled(bool(manifest.entries))
+        self.report_button.setEnabled(bool(self.imgt_result and self.external_batch and
+            set(r.external_id for r in self.imgt_result.records) == set(self.external_batch.candidate_ids)))
+        self.external_status.setText(f'IMGT evidence: {len(manifest.entries)} captured; {len(errors)} failed. '
+                                     + '; '.join(f'{key}: {value}' for key, value in errors.items()))
+        self._set_status('IMGT evidence partial failure' if errors else 'IMGT evidence captured',
+                         'error' if errors else 'success')
+
+    def _view_evidence(self) -> None:
+        if self.evidence_manifest and self.evidence_manifest.entries:
+            EvidenceDialog(self.evidence_manifest, self).exec()
 
     def _molecule_for(self, external_id: str) -> str:
         if not self.external_batch:
