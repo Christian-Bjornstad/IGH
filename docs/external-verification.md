@@ -35,9 +35,15 @@ compatible alternative receiver. No independent failover is configured.
 IMGT public test-set AB021511 was submitted as SEQ-ABC123, without local sample
 names. HTTP Excel and Detailed HTML returned this ID and the same 367-nt sequence.
 The HTTP identity was 100%. Detailed HTML confirms summary and sections 1–6/9
-selectors. Live Edge capture on this workstation exits code 0 before publishing
-DevToolsActivePort, even with a fresh headless profile. Crop visual QA cannot
-currently be confirmed; this is reported rather than treated as a passing check.
+selectors. Live Edge capture now succeeds on this workstation in both visible
+and background mode. The initial launcher exits code 0 while the managed broker
+starts Edge; allowing a three-second handoff grace and disabling Startup Boost
+fixes the premature failure. This follows the launch approach inspected in
+https://github.com/Christian-Bjornstad/Archer-prosess (services/edge_cdp.py).
+Six PNG crops were captured and their ID/sequence binding verified. The summary
+crop was visually inspected. A report package generated from the public result
+contains six embedded images in Word and six in PDF, plus the original evidence
+files; Excel contains analysis data, without embedded screenshots.
 
 ## Completed implementation and validation
 
@@ -63,7 +69,9 @@ started. Local Python FELLES start and Qt event loop returned exit 0. This
 validates the local repo copy; no K: installation or Ivanti production session
 was exercised. The five-line requirements contract was retained.
 
-Outstanding validation: live Edge crops (Edge exits before publishing CDP),
-Word pagination (render_docx.py cannot find LibreOffice and Word is absent),
+The broker fix passes 161 automated tests. Live capture used only public
+AB021511 data; no workstation policies or TLS verification were changed.
+
+Outstanding validation: Word pagination (render_docx.py cannot find LibreOffice and Word is absent),
 and the deliberately deferred grouped reanalysis parameter described above.
 These are not reported as passing checks.

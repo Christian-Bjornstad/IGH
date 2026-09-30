@@ -125,6 +125,18 @@ def _build_fake_session(process: _FakeProcess, profile: Path,
     )
 
 
+def test_exited_launcher_waits_for_broker_port(tmp_path: Path) -> None:
+    reads = []
+    def broker_port(profile):
+        reads.append(profile)
+        return 9333 if len(reads) > 1 else None
+    session = _build_fake_session(_FakeProcess(returncode=0), tmp_path,
+        port_reader=broker_port, opener_factory=lambda: _version_opener(9333))
+    session.wait_for_endpoint()
+    assert session.port == 9333
+    assert len(reads) == 2
+
+
 def _version_opener(port: int) -> urllib.request.OpenerDirector:
     """Build an opener that returns a plausible /json/version payload.
 

@@ -523,6 +523,9 @@ def launch_edge(profile_directory: Path, *,
         f"--window-size={int(viewport['width'])},{int(viewport['height'])}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-background-mode",
+        "--disable-features=msEdgeStartupBoost",
+        "--disable-session-crashed-bubble",
         "--new-window",
         "about:blank",
     ]
@@ -592,14 +595,20 @@ class EdgeCdpSession:
         # Step 1: discover the actual port from DevToolsActivePort. The file
         # is written before the HTTP endpoint is listening, so this can take
         # a moment longer; we re-check poll() each iteration.
-        deadline = time.monotonic() + budget
+        started = time.monotonic()
+        deadline = started + budget
         last_error: Exception | None = None
         while time.monotonic() < deadline:
             port = self._port_reader(self.profile_directory)
             if port is not None:
                 self._actual_port = port
                 break
-            if self.process.poll() is not None:
+            # Managed Edge can hand off to a broker and exit successfully
+            # before that broker publishes the dedicated profile's port.
+            returncode = self.process.poll()
+            if returncode is not None and (
+                returncode != 0 or time.monotonic() - started >= 3.0
+            ):
                 raise EdgeCdpError(
                     f"Microsoft Edge exited (code {self.process.returncode}) "
                     f"before publishing DevToolsActivePort."
@@ -634,7 +643,10 @@ class EdgeCdpSession:
                 return
             except EdgeCdpError as exc:
                 last_error = exc
-                if self.process.poll() is not None:
+                returncode = self.process.poll()
+                if returncode is not None and (
+                    returncode != 0 or time.monotonic() - started >= 3.0
+                ):
                     raise EdgeCdpError(
                         f"Microsoft Edge exited (code {self.process.returncode}) "
                         f"before /json/version answered: {exc}"
@@ -676,6 +688,12 @@ class EdgeCdpSession:
             return
         self._closed = True
         if self._page is not None:
+            try:
+                # The initial launcher may already have exited after handing
+                # off. Close our dedicated browser through its CDP connection.
+                self._page.call("Browser.close")
+            except Exception:
+                pass
             try:
                 self._page.close()
             except Exception:  # pragma: no cover
