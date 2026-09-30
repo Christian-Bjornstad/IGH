@@ -104,8 +104,6 @@ def create_external_batch(
     selected = list(selected_rows)
     if not selected:
         raise ValueError("Velg minst én sekvens")
-    if len(selected) > MAX_BATCH_SIZE:
-        raise ValueError(f"Maksimalt {MAX_BATCH_SIZE} sekvenser kan sendes i én batch")
 
     candidates: list[ExternalCandidate] = []
     used_ids: set[str] = set()

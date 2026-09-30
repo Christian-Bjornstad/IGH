@@ -63,6 +63,7 @@ from .io import ValidationError
 from .models import MergeResult, QcItem
 from .privacy import PrivacyError, ensure_outside_git
 from .reports import generate_clinical_report_package
+from .analysis_jobs import AnalysisJobResult, run_analysis_job
 from .service import MergeService
 
 
@@ -172,11 +173,8 @@ class ExternalWorker(QObject):
     @pyqtSlot()
     def run(self) -> None:
         try:
-            result = (
-                ImgtClient().submit(self.batch)
-                if self.service == "IMGT"
-                else ArrestClient().submit(self.batch)
-            )
+            client = ImgtClient() if self.service == "IMGT" else ArrestClient()
+            result = run_analysis_job(self.service, self.batch, client)
         except (ExternalAnalysisError, OSError, ValueError) as exc:
             self.failed.emit(str(exc))
             return
@@ -649,6 +647,8 @@ class MainWindow(QMainWindow):
         self.arrest_result = None
         self._imgt_status_by_row.clear()
         self._arrest_status_by_row.clear()
+        self.capture_button.setEnabled(False)
+        self.report_button.setEnabled(False)
         try:
             self.result = self.service.process(Path(self.run_edit.text()), self.expected_spin.value())
         except (ValidationError, OSError) as exc:
@@ -817,6 +817,9 @@ class MainWindow(QMainWindow):
         self.imgt_result = None
         self.arrest_result = None
         self.report_button.setEnabled(False)
+        self.capture_button.setEnabled(False)
+        self._imgt_status_by_row.clear()
+        self._arrest_status_by_row.clear()
         external_ids = {
             candidate.row_index: candidate.external_id
             for candidate in self.external_batch.candidates
@@ -901,6 +904,26 @@ class MainWindow(QMainWindow):
         result: object,
     ) -> None:
         if not self.result:
+            return
+        if isinstance(result, AnalysisJobResult):
+            for part, part_result in result.parts:
+                self._external_succeeded(service, part, part_result)
+            statuses = self._imgt_status_by_row if service == "IMGT" else self._arrest_status_by_row
+            for external_id, error in result.errors.items():
+                statuses[batch.by_id()[external_id].row_index] = f"Failed: {error}"
+            if service == "IMGT":
+                records = tuple(record for _, part in result.parts for record in part.records)
+                first = result.parts[0][1] if result.parts else None
+                self.imgt_result = ImgtBatchResult(first.parameters, records, '', '') if first else None
+                self.capture_button.setEnabled(bool(records))
+                self.report_button.setEnabled(result.complete and bool(records))
+            else:
+                records = tuple(record for _, part in result.parts for record in part.records)
+                self.arrest_result = ArrestBatchResult(records, '', '') if records else None
+            self._refresh_external_table()
+            self.external_status.setText(f"{service}: {len(records)} completed, {len(result.errors)} failed")
+            self._set_status(f"{service} partial failure" if result.errors else f"{service} completed",
+                             "error" if result.errors else "success")
             return
         try:
             if service == "IMGT":
@@ -1102,9 +1125,9 @@ class MainWindow(QMainWindow):
             )
             values = {
                 1: external_ids.get(result_index, ""),
-                6: self._imgt_status_by_row.get(result_index, ""),
-                7: self._arrest_status_by_row.get(result_index, ""),
-                8: self.result.rows[result_index].subset,
+                7: self._imgt_status_by_row.get(result_index, ""),
+                8: self._arrest_status_by_row.get(result_index, ""),
+                9: self.result.rows[result_index].subset,
                 10: self.result.rows[result_index].comment,
             }
             for column, value in values.items():

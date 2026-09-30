@@ -165,10 +165,9 @@ def test_batch_payload_contains_only_external_id_and_sequence():
     assert SEQUENCE in batch.fasta
 
 
-def test_batch_rejects_more_than_50_sequences():
-    row = merged_row()
-    with pytest.raises(ValueError, match="Maksimalt 50"):
-        create_external_batch("2099_01_02", [(index, row) for index in range(51)])
+def test_batch_accepts_more_than_50_for_partitioning():
+    batch = create_external_batch("2099_01_02", [(index, merged_row()) for index in range(51)])
+    assert len(batch.candidates) == 51
 
 
 def test_parse_imgt_result_and_verify_sequence():
