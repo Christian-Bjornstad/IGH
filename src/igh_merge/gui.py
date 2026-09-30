@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -69,26 +70,7 @@ from .evidence import EvidenceManifest
 from .service import MergeService
 
 
-class Palette:
-    # Pastel lilac / cool gray palette — designed for long review sessions.
-    ink = "#2A2438"               # body text
-    muted = "#6B6480"             # secondary text
-    panel = "#FFFFFF"             # card / panel background
-    app_bg = "#F6F4FA"            # page background — very soft lilac tint
-    subtle = "#EFEBF5"            # hover surface
-    border = "#D9D2E8"            # soft lilac-gray border
-    accent = "#7C5CB4"            # primary action / selected nav
-    accent_hover = "#6A4DA0"      # hover
-    accent_soft = "#EDE5F8"       # selected nav surface
-    success = "#4F7C5A"
-    error = "#A04848"
-    amber = "#B07A2A"
-    pale_accent = "#F2EBFB"
-    pale_success = "#EEF6EF"
-    pale_error = "#FBEEEC"
-    pale_amber = "#FBF3E2"
-    functional_yellow = "#FFFF00"  # exact match required by highlight_rules.txt
-    excluded_gray = "#D9D9D9"      # kept neutral; do not theme
+from .theme import Palette
 
 
 APP_ICON_PATH = Path(__file__).resolve().parent / "assets" / "igh-merge-icon.ico"
@@ -291,7 +273,7 @@ class MainWindow(QMainWindow):
         # Top bar with privacy badge
         top_bar = QHBoxLayout()
         top_bar.setSpacing(16)
-        privacy = QLabel("LOCAL AND TRACEABLE")
+        privacy = QLabel("Local sample mapping")
         privacy.setObjectName("PrivacyBadge")
         privacy.setToolTip(
             "Raw files and linkage data are stored locally. External sending requires explicit confirmation."
@@ -404,7 +386,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
 
         information = QLabel(
-            "3  EXTERNAL ANALYSIS   Select Leader sequences. Before sending, "
+            "3  EXTERNAL ANALYSIS   Select Leader and FR1 sequences. Before sending, "
             "the sample number is replaced with a random external ID. Only the FASTA header and "
             "nucleotide sequence are sent."
         )
@@ -412,7 +394,22 @@ class MainWindow(QMainWindow):
         information.setWordWrap(True)
         layout.addWidget(information)
 
+        filter_bar = QHBoxLayout()
+        self.candidate_search = QLineEdit()
+        self.candidate_search.setPlaceholderText('Search sample or target')
+        self.candidate_search.setAccessibleName('Search analysis candidates')
+        self.target_filter = QComboBox()
+        self.target_filter.addItems(['All targets', 'Leader', 'FR1'])
+        self.target_filter.setAccessibleName('Filter target')
+        self.selection_count = QLabel('0 selected')
+        filter_bar.addWidget(self.candidate_search, 1)
+        filter_bar.addWidget(self.target_filter)
+        filter_bar.addWidget(self.selection_count)
+        layout.addLayout(filter_bar)
+        self.candidate_search.textChanged.connect(self._filter_candidates)
+        self.target_filter.currentTextChanged.connect(self._filter_candidates)
         self.candidate_table = QTableWidget(0, 11)
+        self.candidate_table.itemChanged.connect(self._update_selection_count)
         self.candidate_table.setHorizontalHeaderLabels(
             [
                 "Select",
@@ -437,7 +434,7 @@ class MainWindow(QMainWindow):
         self.candidate_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
-        self.candidate_table.setAccessibleName("Leader candidates for external analysis")
+        self.candidate_table.setAccessibleName("Leader and FR1 candidates for external analysis")
         layout.addWidget(self.candidate_table, 1)
 
         action_bar = QFrame()
@@ -467,7 +464,7 @@ class MainWindow(QMainWindow):
         self.capture_button = QPushButton("Capture IMGT evidence (Edge)")
         self.capture_button.setToolTip(
             "Open Microsoft Edge with the IGHV profile and capture IMGT result-page "
-            "screenshots (sections 1-6 and 9) for the selected Leader candidates."
+            "screenshots (sections 1-6 and 9) for the selected sequences."
         )
         self.capture_button.setEnabled(False)
         self.capture_button.clicked.connect(self._capture_imgt_evidence)
@@ -780,6 +777,25 @@ class MainWindow(QMainWindow):
                         "Not yellow: LymphoTrack does not show both In-frame=Y and "
                         "No Stop codon=Y."
                     )
+            self.candidate_table.item(row, 3).setToolTip(item.sample)
+        self._filter_candidates()
+        self._update_selection_count()
+
+    def _filter_candidates(self) -> None:
+        query = self.candidate_search.text().casefold().strip()
+        target = self.target_filter.currentText()
+        for row in range(self.candidate_table.rowCount()):
+            sample_cell = self.candidate_table.item(row, 3)
+            target_cell = self.candidate_table.item(row, 4)
+            if sample_cell and target_cell:
+                matches = query in (sample_cell.text() + ' ' + target_cell.text()).casefold()
+                self.candidate_table.setRowHidden(row, not matches or (target != 'All targets' and target_cell.text() != target))
+
+    def _update_selection_count(self) -> None:
+        count = sum(self.candidate_table.item(row, 0) is not None and
+                    self.candidate_table.item(row, 0).checkState() == Qt.CheckState.Checked
+                    for row in range(self.candidate_table.rowCount()))
+        self.selection_count.setText(f'{count} selected / {self.candidate_table.rowCount()}')
 
     def _select_candidates(self) -> None:
         for row in range(self.candidate_table.rowCount()):
@@ -1005,6 +1021,7 @@ class MainWindow(QMainWindow):
                 self.external_batch,
                 self.imgt_result,
                 self.arrest_result,
+                evidence=self.evidence_manifest,
             )
         except (OSError, PrivacyError, ValueError) as exc:
             QMessageBox.critical(self, "Report failed", str(exc))
