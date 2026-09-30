@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict
+import hashlib
+import shutil
+from html import escape
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,15 +13,18 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image, PageBreak
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches
 
-from .external import ArrestBatchResult, ExternalBatch, ImgtBatchResult
+from .external import ArrestBatchResult, ExternalBatch, ImgtBatchResult, ImgtRecord, sequence_sha256
 from .models import MergedRow
 from .privacy import ensure_outside_git
+from .evidence import EvidenceManifest, validate_evidence_manifest
+from .excel import ExcelReportWriter
+from .imgt_observations import j_call_notes, record_observation_text
 
 
 def _gene(value: str) -> str:
@@ -31,10 +37,12 @@ def _sample_report_records(
     batch: ExternalBatch,
     imgt: ImgtBatchResult,
     arrest: ArrestBatchResult | None,
+    evidence: EvidenceManifest | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Group rows by sample and produce a serialisable record for each
     rearrangement (used by both the PDF and Word renderers)."""
     candidates = batch.by_id()
+    evidence_by_id = {e.external_id: e for e in evidence.entries} if evidence else {}
     imgt_records = {item.external_id: item for item in imgt.records}
     arrest_records = (
         {item.external_id: item for item in arrest.records} if arrest else {}
@@ -57,17 +65,25 @@ def _sample_report_records(
         for external_id in external_ids:
             candidate = candidates[external_id]
             local = rows[candidate.row_index]
-            record = imgt_records[external_id]
+            if (local.sample != candidate.sample or local.target != candidate.target
+                or local.source.rank != candidate.rank or sequence_sha256(local.source.sequence) != candidate.sequence_sha256):
+                raise ValueError('Report row does not match candidate ID/sequence/target/rank')
+            record = imgt_records.get(external_id)
+            missing_imgt = record is None
+            if record is None:
+                record = ImgtRecord(external_id, None, None, None, '', '', '', None, '', '', '', '', '')
+            entry = evidence_by_id.get(external_id)
             arrest_record = arrest_records.get(external_id)
             support_label = f"Leader-{local.source.rank}"
             fr1_support = [
                 row.source.percent_total_reads
                 for row in local_rows
-                if row.target == "FR1" and support_label in row.comment
+                if local.target == "Leader" and row.target == "FR1" and
+                re.search(r"(?<![A-Za-z0-9-])" + re.escape(support_label) + r"(?![A-Za-z0-9-])", row.comment)
             ]
             identity = (
-                f"{record.v_identity_percent:.1f} %"
-                if record.v_identity_percent is not None
+                f"{record.selected_identity_percent:.1f} %"
+                if record.selected_identity_percent is not None
                 else "not calculated"
             )
             counts = (
@@ -90,7 +106,7 @@ def _sample_report_records(
             sample_records.append(
                 {
                     "number": str(len(sample_records) + 1),
-                    "rank_label": f"Leader-{local.source.rank}",
+                    "rank_label": f"{local.target}-{local.source.rank}",
                     "leader_fraction": f"{local.source.percent_total_reads:.2f} %",
                     "fr1_support": (
                         ", ".join(
@@ -102,7 +118,7 @@ def _sample_report_records(
                         [
                             _gene(record.v_call),
                             _gene(record.d_call) or "-",
-                            _gene(record.j_call),
+                            record.j_call,
                         ]
                     ),
                     "identity": f"{identity} ({counts})",
@@ -116,6 +132,19 @@ def _sample_report_records(
                     )
                     or "Not detected",
                     "subset": subset,
+                    "imgt_subset": record.cll_subset or 'Not assigned / not analyzed',
+                    "arrest_subset": arrest_record.subset if arrest_record else 'ARResT analysis missing',
+                    "identity_source": record.selected_identity_source,
+                    "raw_identities": f'{record.raw_identity_percent or "-"}; with indel events: {record.raw_identity_with_indel_events or "-"}',
+                    "observations": record_observation_text(record),
+                    "j_notes": j_call_notes(record.j_call) or '-',
+                    "analysis_status": 'IMGT analysis missing' if missing_imgt else 'IMGT result available',
+                    "summary_text": entry.sections.get('00_summary', '') if entry else 'IMGT evidence missing',
+                    "images": entry.images if entry else (),
+                    "missing_evidence": '; '.join(f'{k}: {v}' for k,v in entry.missing_sections.items()) if entry else 'IMGT evidence missing',
+                    "sequence_sha256": candidate.sequence_sha256,
+                    "session_id": batch.session_id,
+                    "molecule_type": candidate.molecule_type,
                     "external_id": record.external_id,
                     "depth_leader": str(depths.get("Leader") or "-"),
                     "depth_fr1": str(depths.get("FR1") or "-"),
@@ -146,9 +175,9 @@ def _write_sample_pdf(
     )
     story = [
         Paragraph("IGHV-SHM report draft", styles["Title"]),
-        Paragraph(f"<b>Sample:</b> {sample}", styles["BodyText"]),
+        Paragraph(f"<b>Sample:</b> {escape(sample)}", styles["BodyText"]),
         Paragraph(
-            f"<b>Run date:</b> {run_date}",
+            f"<b>Run date:</b> {escape(run_date)}",
             styles["BodyText"],
         ),
         Paragraph(
@@ -161,8 +190,8 @@ def _write_sample_pdf(
             styles["BodyText"],
         ),
         Paragraph(
-            f"<b>IMGT/V-QUEST version:</b> {imgt_version or 'unknown'}<br/>"
-            f"<b>IMGT reference release:</b> {imgt_release or 'unknown'}",
+            f"<b>IMGT/V-QUEST version:</b> {escape(imgt_version or 'unknown')}<br/>"
+            f"<b>IMGT reference release:</b> {escape(imgt_release or 'unknown')}",
             styles["BodyText"],
         ),
     ]
@@ -178,7 +207,7 @@ def _write_sample_pdf(
     for rec in records:
         data = [
             ["External ID", rec["external_id"]],
-            ["Leader fraction", rec["leader_fraction"]],
+            ["Target fraction", rec["leader_fraction"]],
             ["FR1 support", rec["fr1_support"]],
             ["IGHV / IGHD / IGHJ", rec["genes"]],
             ["VH identity", rec["identity"]],
@@ -186,9 +215,17 @@ def _write_sample_pdf(
             ["CDR3 (AA)", rec["cdr3"]],
             ["CDR3 length", rec["cdr3_length"]],
             ["Insertion / deletion", rec["indel"]],
-            ["Subset", rec["subset"]],
+            ["IMGT subset", rec["imgt_subset"]],
+            ["ARResT subset", rec["arrest_subset"]],
+            ["Identity source", rec["identity_source"]],
+            ["Raw identities", rec["raw_identities"]],
+            ["J call notes", rec["j_notes"]],
+            ["Manual observations", rec["observations"]],
+            ["Analysis status", rec["analysis_status"]],
+            ["Molecule type", rec["molecule_type"]],
             ["Comment", rec["comment"] or "-"],
         ]
+        data = [[Paragraph(escape(str(value)), styles['BodyText']) for value in row] for row in data]
         table = Table(data, colWidths=[48 * mm, 112 * mm])
         table.setStyle(
             TableStyle(
@@ -205,7 +242,7 @@ def _write_sample_pdf(
             [
                 Spacer(1, 5 * mm),
                 Paragraph(
-                    f"Rearrangement {rec['number']} - {rec['rank_label']}",
+                    f"Rearrangement {rec['number']} - {escape(rec['rank_label'])}",
                     styles["Heading2"],
                 ),
                 table,
@@ -218,7 +255,17 @@ def _write_sample_pdf(
                 styles["BodyText"],
             )
         )
-        doc.build(story)
+        story.append(Paragraph('IMGT summary', styles['Heading2']))
+        for line in rec['summary_text'].splitlines():
+            story.append(Paragraph(escape(line) or ' ', styles['BodyText']))
+        story.append(Paragraph(escape(rec['missing_evidence']), styles['BodyText']))
+        for filename in rec['images']:
+            image = Image(filename)
+            factor = min(160 * mm / image.imageWidth, 210 * mm / image.imageHeight, 1)
+            image.drawWidth, image.drawHeight = image.imageWidth * factor, image.imageHeight * factor
+            story.extend([PageBreak(), Paragraph(escape(Path(filename).stem), styles['Heading2']), image])
+        story.extend([Spacer(1, 5 * mm), Paragraph('Specialist assessment: __________________________', styles['BodyText'])])
+    doc.build(story)
 
 
 def _write_sample_docx(
@@ -271,7 +318,7 @@ def _write_sample_docx(
         table.alignment = WD_TABLE_ALIGNMENT.LEFT
         rows = [
             ("External ID", rec["external_id"]),
-            ("Leader fraction", rec["leader_fraction"]),
+            ("Target fraction", rec["leader_fraction"]),
             ("FR1 support", rec["fr1_support"]),
             ("IGHV / IGHD / IGHJ", rec["genes"]),
             ("VH identity", rec["identity"]),
@@ -279,7 +326,14 @@ def _write_sample_docx(
             ("CDR3 (AA)", rec["cdr3"]),
             ("CDR3 length", rec["cdr3_length"]),
             ("Insertion / deletion", rec["indel"]),
-            ("Subset", rec["subset"]),
+            ("IMGT subset", rec["imgt_subset"]),
+            ("ARResT subset", rec["arrest_subset"]),
+            ("Identity source", rec["identity_source"]),
+            ("Raw identities", rec["raw_identities"]),
+            ("J call notes", rec["j_notes"]),
+            ("Manual observations", rec["observations"]),
+            ("Analysis status", rec["analysis_status"]),
+            ("Molecule type", rec["molecule_type"]),
             ("Comment", rec["comment"] or "-"),
         ]
         for label, value in rows:
@@ -291,6 +345,18 @@ def _write_sample_docx(
                 run.font.size = Pt(10)
             for run in cells[1].paragraphs[0].runs:
                 run.font.size = Pt(10)
+        document.add_heading('IMGT summary', level=2)
+        document.add_paragraph(rec['summary_text'])
+        document.add_paragraph(rec['missing_evidence'])
+        for filename in rec['images']:
+            document.add_page_break()
+            document.add_heading(Path(filename).stem, level=2)
+            from docx.image.image import Image as DocxImage
+            image = DocxImage.from_file(filename)
+            width, height = image.px_width, image.px_height
+            factor = min(6.3 / width, 8.3 / height)
+            document.add_picture(filename, width=Inches(width * factor), height=Inches(height * factor))
+        document.add_paragraph('Specialist assessment: __________________________')
     document.add_paragraph()
     p = document.add_paragraph()
     run = p.add_run("DRAFT - requires specialist approval before clinical use.")
@@ -305,15 +371,41 @@ def generate_clinical_report_package(
     batch: ExternalBatch,
     imgt: ImgtBatchResult,
     arrest: ArrestBatchResult | None = None,
+    *, evidence: EvidenceManifest | None = None,
 ) -> Path:
     output = run_directory.resolve() / f"{batch.run_date}_reports" / batch.session_id
     ensure_outside_git(output)
-    output.mkdir(parents=True, exist_ok=True)
-    by_sample = _sample_report_records(rows, batch, imgt, arrest)
+    if evidence:
+        validate_evidence_manifest(evidence, batch)
+    if output.exists():
+        output = output / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    output.mkdir(parents=True, exist_ok=False)
+    by_sample = _sample_report_records(rows, batch, imgt, arrest, evidence)
+    export_rows = [replace(row) for row in rows]
+    for candidate in batch.candidates:
+        export_rows[candidate.row_index].external_id = candidate.external_id
+    ExcelReportWriter().write(export_rows, output / 'analysis.xlsx')
+    if evidence:
+        evidence_directory = output / 'evidence'
+        evidence_directory.mkdir()
+        for entry in evidence.entries:
+            directory = evidence_directory / entry.external_id
+            directory.mkdir()
+            (directory / 'summary.txt').write_text(entry.sections.get('00_summary', ''), encoding='utf-8')
+            (directory / 'evidence.audit.json').write_text(json.dumps(asdict(entry), ensure_ascii=False, indent=2), encoding='utf-8')
+            for filename in entry.images:
+                shutil.copy2(filename, directory / Path(filename).name)
     safe_names = {
         sample: re.sub(r"[^A-Za-z0-9_.-]", "_", sample)
         for sample in by_sample
     }
+    counts = {}
+    for sample, name in list(safe_names.items()):
+        key = name.casefold()
+        counts[key] = counts.get(key, 0) + 1
+    for sample, name in list(safe_names.items()):
+        if counts[name.casefold()] > 1:
+            safe_names[sample] = name + '_' + hashlib.sha256(sample.encode()).hexdigest()[:8]
     for sample, records in by_sample.items():
         name = safe_names[sample]
         _write_sample_pdf(
@@ -336,6 +428,10 @@ def generate_clinical_report_package(
         )
     audit = {
         "schema_version": 1,
+        "complete": set(batch.candidate_ids) == {r.external_id for r in imgt.records},
+        "missing_imgt_ids": [i for i in batch.candidate_ids if i not in {r.external_id for r in imgt.records}],
+        "evidence_ids": [e.external_id for e in evidence.entries] if evidence else [],
+        "mapping": [asdict(c) for c in batch.candidates],
         "status": "DRAFT - requires specialist approval",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_date": batch.run_date,
