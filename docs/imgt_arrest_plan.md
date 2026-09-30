@@ -147,3 +147,5 @@ the merged sheet remains compatible and traceability is not compressed away.
 7. Clinical pilot and sign-off before routine use.
 
 Current selection: all Leader and FR1 >=2.5% (unrounded), including nonproductive sequences. The older Leader/Y-Y selection below is superseded for external analysis.
+
+Verified 2026-09-30 via GET: arrest.tools redirects to bat.infspire.org. AssignSubsets form action is https://bat.infspire.org/cgi-bin/arrest/assignsubsets_html.pl. Station3/subsets is Shiny, with no compatible CGI form. No independent reserve verified. Two attempts only for timeout/5xx, same payload; TLS/schema/ID/hash errors are not retried.

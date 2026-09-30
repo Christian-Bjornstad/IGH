@@ -10,7 +10,7 @@ import re
 import secrets
 import tempfile
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -27,10 +27,10 @@ from .models import MergedRow
 from .privacy import ensure_outside_git
 
 IMGT_URL = "https://www.imgt.org/IMGT_vquest/analysis"
-# ARResT moved from bat.infspire.org (infspire) to station3.arrest.tools.
-# See https://station3.arrest.tools/subsets/ - response format is identical
-# to the previous AssignSubsets endpoint, so parser is unchanged.
-ARREST_URL = "https://station3.arrest.tools/cgi-bin/arrest/assignsubsets_html.pl"
+# Verified 2026-09-30 from the AssignSubsets form action. Station3/Subsets
+# is a Shiny application, not a compatible CGI reserve.
+ARREST_URL = "https://bat.infspire.org/cgi-bin/arrest/assignsubsets_html.pl"
+ARREST_ENDPOINTS = (ARREST_URL,)
 MAX_BATCH_SIZE = 50
 MAX_RESPONSE_BYTES = 25_000_000
 IUPAC_NUCLEOTIDES = frozenset("ACGTRYSWKMBDHVN")
@@ -243,6 +243,8 @@ class ArrestBatchResult:
     records: tuple[ArrestRecord, ...]
     raw_tsv: str
     results_url: str
+    endpoint: str = ""
+    attempts: int = 1
 
 
 def _bool_value(value: str | None) -> bool | None:
@@ -630,19 +632,25 @@ def parse_arrest_result(
 class ArrestClient:
     def __init__(self, *, timeout: tuple[int, int] = (15, 300)):
         self.timeout = timeout
+        self.endpoints = ARREST_ENDPOINTS
 
     def submit(self, batch: ExternalBatch) -> ArrestBatchResult:
-        try:
-            response = requests.post(
-                ARREST_URL,
-                files={"fastatext": (None, batch.fasta)},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-        except requests.exceptions.SSLError as exc:
-            raise _tls_error("ARResT", exc) from exc
-        except requests.RequestException as exc:
-            raise ExternalAnalysisError(f"Kunne ikke kontakte ARResT: {exc}") from exc
+        payload = {"fastatext": (None, batch.fasta)}
+        endpoint = self.endpoints[0]
+        for attempts in range(1, 3):
+            try:
+                response = requests.post(endpoint, files=payload, timeout=self.timeout)
+                response.raise_for_status()
+                break
+            except requests.exceptions.SSLError as exc:
+                raise _tls_error("ARResT", exc) from exc
+            except requests.RequestException as exc:
+                retryable = isinstance(exc, requests.Timeout) or (
+                    isinstance(exc, requests.HTTPError) and exc.response is not None
+                    and 500 <= exc.response.status_code < 600)
+                if not retryable or attempts == 2:
+                    raise ExternalAnalysisError(
+                        'ARResT unavailable. No independent compatible reserve is verified. Start a new analysis to retry.') from exc
         _validate_response_size(response.content)
 
         parser = _ResultLinkParser()
@@ -653,7 +661,7 @@ class ArrestClient:
                 f"ARResT did not return a unique result file: {plain}"
             )
         results_url = urljoin(response.url, parser.tsv_links[0])
-        if urlparse(results_url).hostname not in {
+        if urlparse(results_url).scheme != 'https' or urlparse(results_url).hostname not in {
             "bat.infspire.org",
             "station3.arrest.tools",
         }:
@@ -668,11 +676,13 @@ class ArrestClient:
         except requests.RequestException as exc:
             raise ExternalAnalysisError(f"Kunne ikke hente ARResT-resultatet: {exc}") from exc
         _validate_response_size(result_response.content)
-        return parse_arrest_result(
+        if urlparse(result_response.url).scheme != 'https' or urlparse(result_response.url).hostname not in {'bat.infspire.org', 'station3.arrest.tools'}:
+            raise ExternalAnalysisError('ARResT result redirected to an unknown or insecure domain')
+        return replace(parse_arrest_result(
             result_response.content.decode("utf-8-sig"),
             batch,
             results_url=results_url,
-        )
+        ), endpoint=endpoint, attempts=attempts)
 
 
 def analysis_directory(run_directory: Path, batch: ExternalBatch) -> Path:
@@ -779,7 +789,8 @@ def save_arrest_result(
             {
                 "schema_version": 1,
                 "service": "ARResT/AssignSubsets",
-                "endpoint": ARREST_URL,
+                "endpoint": result.endpoint or ARREST_URL,
+                "attempts": result.attempts,
                 "results_url": result.results_url,
                 "saved_at": datetime.now(timezone.utc).isoformat(),
                 "records": [asdict(record) for record in result.records],
