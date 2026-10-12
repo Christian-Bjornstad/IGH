@@ -2,7 +2,10 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, Qt, QUrl
 from PyQt6.QtGui import QPixmap, QDesktopServices
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QComboBox, QPlainTextEdit, QLabel, QPushButton, QScrollArea
+from PyQt6.QtWidgets import (
+    QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPlainTextEdit,
+    QPushButton, QScrollArea, QTabWidget, QVBoxLayout, QWidget,
+)
 
 from .edge_cdp import launch_edge, submit_imgt_detailed, capture_imgt_evidence, extract_imgt_text
 from .evidence import EvidenceManifest, save_evidence_manifest, verify_imgt_page
@@ -58,39 +61,109 @@ class EvidenceDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle('IMGT evidence')
         self.resize(900, 750)
+        self.setMinimumSize(660, 480)
         self.manifest = manifest
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setSpacing(12)
+        title = QLabel('IMGT evidence')
+        title.setObjectName('PageTitle')
+        layout.addWidget(title)
+        introduction = QLabel('Review the local result summary and captured sections for each external sequence ID.')
+        introduction.setObjectName('SecondaryText')
+        introduction.setWordWrap(True)
+        layout.addWidget(introduction)
+        candidate_row = QHBoxLayout()
+        candidate_label = QLabel('Sequence')
         self.candidate = QComboBox()
+        self.candidate.setAccessibleName('Evidence sequence')
+        candidate_label.setBuddy(self.candidate)
         self.candidate.addItems([entry.external_id for entry in manifest.entries])
+        candidate_row.addWidget(candidate_label)
+        candidate_row.addWidget(self.candidate, 1)
+        self.capture_details = QLabel()
+        self.capture_details.setObjectName('SecondaryText')
+        candidate_row.addWidget(self.capture_details)
+        layout.addLayout(candidate_row)
         self.image_choice = QComboBox()
+        self.image_choice.setAccessibleName('Captured IMGT section')
         self.text = QPlainTextEdit()
         self.text.setReadOnly(True)
+        self.text.setAccessibleName('IMGT result summary and missing sections')
+        self.text.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.image = QLabel()
-        self.image.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.image.setObjectName('EvidenceImage')
+        self.image.setAccessibleName('Captured IMGT evidence image')
+        self.image.setWordWrap(True)
+        self.image.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         scroll = QScrollArea()
+        scroll.setAccessibleName('Evidence image viewer')
         scroll.setWidget(self.image)
         scroll.setWidgetResizable(True)
+        tabs = QTabWidget()
+        tabs.addTab(self.text, 'Result summary')
+        image_page = QWidget()
+        image_layout = QVBoxLayout(image_page)
+        image_layout.setContentsMargins(0, 12, 0, 0)
+        image_layout.addWidget(self.image_choice)
+        image_layout.addWidget(scroll, 1)
+        tabs.addTab(image_page, 'Captured sections')
+        layout.addWidget(tabs, 1)
         self.folder = QPushButton('Open evidence folder')
-        for widget in (self.candidate, self.text, self.image_choice, scroll, self.folder):
-            layout.addWidget(widget)
+        footer = QHBoxLayout()
+        footer.addWidget(self.folder)
+        footer.addStretch()
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        footer.addWidget(buttons)
+        layout.addLayout(footer)
         self.candidate.currentIndexChanged.connect(self._select_entry)
         self.image_choice.currentIndexChanged.connect(self._select_image)
         self.folder.clicked.connect(self._open_folder)
         self._select_entry()
 
     def _select_entry(self):
-        entry = self.manifest.entries[self.candidate.currentIndex()]
+        index = self.candidate.currentIndex()
+        if index < 0:
+            self.text.setPlainText('No evidence has been captured. Return to IMGT & ARResT and capture evidence for selected sequences.')
+            self.folder.setEnabled(False)
+            self.image_choice.setEnabled(False)
+            self.capture_details.clear()
+            self._select_image()
+            return
+        entry = self.manifest.entries[index]
         self.text.setPlainText(entry.sections.get('00_summary', '') + '\n\n' +
                               '\n'.join(f'{key}: {reason}' for key, reason in entry.missing_sections.items()))
+        self.capture_details.setText(f'{len(entry.images)} sections captured')
+        self.folder.setEnabled(bool(entry.images))
+        self.image_choice.setEnabled(bool(entry.images))
+        self.image_choice.blockSignals(True)
         self.image_choice.clear()
         for path in entry.images:
             self.image_choice.addItem(Path(path).stem, path)
+        self.image_choice.blockSignals(False)
+        self._select_image()
 
     def _select_image(self):
         path = self.image_choice.currentData()
-        self.image.setPixmap(QPixmap(path) if path else QPixmap())
+        if path:
+            pixmap = QPixmap(path)
+            self.image.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            self.image.setMargin(0)
+            self.image.setPixmap(pixmap)
+            if pixmap.isNull():
+                self.image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.image.setMargin(24)
+                self.image.setText('The captured image could not be opened. Check the evidence folder.')
+        else:
+            self.image.setPixmap(QPixmap())
+            self.image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.image.setMargin(24)
+            self.image.setText('No captured image is available for this sequence.')
 
     def _open_folder(self):
+        if self.candidate.currentIndex() < 0:
+            return
         entry = self.manifest.entries[self.candidate.currentIndex()]
         if entry.images:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(entry.images[0]).parent)))

@@ -1,23 +1,30 @@
-"""Shared neutral surfaces, purple actions and semantic status colors."""
+"""Shared laboratory workspace surfaces and semantic status colors."""
 
 class Palette:
-    # Pastel lilac / cool gray palette — designed for long review sessions.
-    ink = "#2A2438"               # body text
-    muted = "#6B6480"             # secondary text
+    # Calm, high-contrast surfaces for prolonged review of dense result tables.
+    ink = "#203247"               # body text
+    muted = "#59697A"             # secondary text
     panel = "#FFFFFF"             # card / panel background
-    app_bg = "#F6F4FA"            # page background — very soft lilac tint
-    subtle = "#EFEBF5"            # hover surface
-    border = "#D9D2E8"            # soft lilac-gray border
-    accent = "#7C5CB4"            # primary action / selected nav
-    accent_hover = "#6A4DA0"      # hover
-    accent_soft = "#EDE5F8"       # selected nav surface
-    success = "#4F7C5A"
-    error = "#A04848"
-    amber = "#B07A2A"
-    pale_accent = "#F2EBFB"
-    pale_success = "#EEF6EF"
-    pale_error = "#FBEEEC"
-    pale_amber = "#FBF3E2"
+    app_bg = "#F3F5F7"
+    subtle = "#EDF1F4"
+    border = "#D4DDE5"
+    border_strong = "#98A9B8"
+    accent = "#16756F"
+    accent_hover = "#105D59"
+    accent_soft = "#DDEEEB"
+    sidebar = "#172C42"
+    sidebar_hover = "#233E58"
+    sidebar_muted = "#B4C5D5"
+    sidebar_text = "#F5F8FC"
+    success = "#326646"
+    error = "#A33E42"
+    amber = "#8A601B"
+    pale_accent = "#EDF6F4"
+    pale_success = "#EBF4EF"
+    pale_error = "#FAECEC"
+    pale_amber = "#FCF4E5"
+    disabled_text = "#697887"
+    disabled_bg = "#E8EDF1"
     functional_yellow = "#FFFF00"  # exact match required by highlight_rules.txt
     excluded_gray = "#D9D9D9"      # kept neutral; do not theme
 

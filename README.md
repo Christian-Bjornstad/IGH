@@ -19,7 +19,7 @@
 
 ---
 
-![Tidligere IGH Merge-grensesnitt med syntetiske testdata](docs/assets/igh-merge-overview.png)
+![IGHV-grensesnitt med syntetiske testdata](docs/assets/ighv-workspace.png)
 
 > Skjermbildet bruker utelukkende konstruerte prøve-ID-er og sekvenser.
 
@@ -34,8 +34,8 @@ desktopverktøy. GUI og kommandolinje bruker samme validerte prosesseringskjerne
 | **Kontroller** | Viser kontrollstatus separat for Leader og FR1 |
 | **Sekvenskobling** | Finner eksakt FR1-støtte, Leader-varianter og identiske sekvenser mellom prøver |
 | **IMGT** | Sender pseudonymisert FASTA og henter den komplette resultatpakken |
-| **ARResT** | Henter subset, confidence, score og SeqCure-status |
-| **Rapporter** | Lager lokale PDF- og Word-utkast med sporbare auditdata per prøve |
+| **ARResT** | Henter subset, confidence, score, SeqCure-meldinger og full advice |
+| **Rapporter** | Lager lokale Excel- og Word-utkast med sporbare auditdata per prøve |
 | **IMGT-dokumentasjon** | Lagrer skjermutsnitt fra Detailed view via Microsoft Edge under kjøringsmappen |
 | **Excel** | Eksporterer én merged-fane med 24 kolonner og valgfri gulmarkering |
 
@@ -177,6 +177,7 @@ som standard.
 ## IMGT og ARResT
 
 - Arbeidskøen deler utvalget i delanalyser med maksimalt 50 sekvenser. IMGT-delanalyser har én molekyltype.
+- ARResT beholder mottatte svar ved delvis feil. Ny innsending av samme utvalg sender bare sekvensene som mangler svar; fremdriften vises per gruppe. ARResT-klienten avviser forespørsler over 50 før nettverkssending.
 - Valgte Leader- og FR1-sekvenser inngår i payloaden. Reads ≥2,5 % vises i fet skrift, uavhengig av funksjonalitet.
 - Søk etter prøve/target og targetfilter endrer bare visningen; utvalgstelleren viser hele utvalget.
 - Gule kandidater har `In-frame=Y`, `No Stop codon=Y` og enten minst 2,5 %
@@ -185,12 +186,34 @@ som standard.
 - IMGT-resultatet lagres som komplett resultatpakke, inkludert parametere og
   program-/referanseversjon.
 - ARResT-resultatet lagres med subset, confidence, score og SeqCure-status.
+  Detaljrapportens meldinger og råd knyttes til hver eksterne ID. Manglende
+  detaljrapport markeres uten å forkaste subset-svaret. Rå HTML, kilde-URL,
+  hentetid og hash følger auditdataene.
 - Råresultater og auditdata lagres under `YYYY_MM_DD_external_results`.
 
 ### Rapportutkast
 
-Etter fullført IMGT kan **Generate report draft** opprette lokale PDF- og
-Word-utkast per prøve, tilhørende `analysis.xlsx`, validerte bevis og `report_data.audit.json` under:
+Prøvens Excel-arbeidsbok har **Oversikt** til og med rad 8, én fane per
+selvstendig rearrangering og **Mal for Sanger** etter laboratoriets mal.
+Ufunksjonelle resultater merkes med **(Ufunksjonell)** i fanenavnet.
+Target fraction viser andelen reads i den aktuelle raden; FR1 support viser
+eksakt støtte i samme prøve, også når støtteandelen er under 2,5 %.
+IMGT-tabellen har detaljsidens lysegule bakgrunn og tekstfarger. Positive
+«påvist»-observasjoner er fete. IMGT-bilder beskjæres for visning i Excel;
+originale bildefiler og hashes bevares. ARResT/SeqCure-meldinger og råd
+vises som tekst, og lange råd fordeles over flere rader.
+
+FR1 med eksakt sekvensstøtte til en valgt Leader med uavrundet reads ≥2,5 %
+behandles som støtte i rapporten. Støttekoblingen undersøkes også for
+ufunksjonelle sekvenser. Analyseutvalget, merged-arket og auditdata beholder
+alle sekvensene. Audit oppgir separat dekning for IMGT, ARResT og bevis.
+**Settings → LymphoTrack version** er manuelt redigerbart, med 2.4.6 som
+startverdi. Et tomt felt vises som ikke oppgitt.
+Se [rapportarbeidsbøker](docs/report-review-workbooks.md).
+
+Etter fullført IMGT kan **Report draft** opprette lokale Excel- og
+Word-utkast og en Excel-arbeidsbok per prøve, tilhørende `analysis.xlsx`,
+validerte bevis og `report_data.audit.json` under:
 
 ```text
 YYYY_MM_DD_reports\<sesjon>

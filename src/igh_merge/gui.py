@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from functools import partial
+from dataclasses import replace
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QSettings, QThread, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtCore import QObject, QSettings, QTemporaryDir, QThread, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -26,9 +27,9 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QStackedWidget,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -85,19 +86,74 @@ class MetricCard(QFrame):
     def __init__(self, label: str, description: str, color: str):
         super().__init__()
         self.setObjectName("MetricCard")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(3)
-        eyebrow = QLabel(label.upper())
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(12)
+        self.setMinimumHeight(64)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+        eyebrow = QLabel(label)
         eyebrow.setObjectName("MetricLabel")
         self.value = QLabel("0")
-        self.value.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
+        self.value.setObjectName("MetricValue")
         self.value.setStyleSheet(f"color: {color}")
+        self.value.setAccessibleName(label)
         caption = QLabel(description)
         caption.setObjectName("MetricDescription")
-        layout.addWidget(eyebrow)
+        text_layout.addWidget(eyebrow)
+        text_layout.addWidget(caption)
+        layout.addLayout(text_layout, 1)
         layout.addWidget(self.value)
-        layout.addWidget(caption)
+
+
+class TableSection(QFrame):
+    """Give a result table a stable heading and an actionable empty state."""
+
+    def __init__(self, table: QTableWidget, title: str, empty_message: str, noun: str):
+        super().__init__()
+        self.setObjectName("TableSection")
+        self.table = table
+        self.empty_message = empty_message
+        self.noun = noun
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        header = QHBoxLayout()
+        heading = QLabel(title)
+        heading.setObjectName("SectionTitle")
+        self.summary = QLabel("Not validated")
+        self.summary.setObjectName("SecondaryText")
+        header.addWidget(heading)
+        header.addStretch()
+        header.addWidget(self.summary)
+        layout.addLayout(header)
+        self.stack = QStackedWidget()
+        self.stack.addWidget(table)
+        self.empty = QLabel(empty_message)
+        self.empty.setObjectName("TableEmptyState")
+        self.empty.setWordWrap(True)
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setAccessibleName(f"{title}: empty state")
+        self.stack.addWidget(self.empty)
+        self.stack.setMinimumHeight(140)
+        layout.addWidget(self.stack, 1)
+        table.model().rowsInserted.connect(self.refresh)
+        table.model().rowsRemoved.connect(self.refresh)
+        table.model().modelReset.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self, *_args) -> None:
+        total = self.table.rowCount()
+        visible = sum(not self.table.isRowHidden(row) for row in range(total))
+        self.summary.setText(
+            f"{total} {self.noun}" if visible == total else f"{visible} of {total} {self.noun} shown"
+        )
+        self.empty.setText(
+            "No candidates match these filters.\nClear the search or choose All targets to show the run."
+            if total and not visible else self.empty_message
+        )
+        self.stack.setCurrentWidget(self.table if visible else self.empty)
 
 
 class PayloadDialog(QDialog):
@@ -112,6 +168,10 @@ class PayloadDialog(QDialog):
         )
         description.setWordWrap(True)
         layout.addWidget(description)
+        if service == 'ARResT':
+            sequences = sum(line.startswith('>') for line in payload.splitlines())
+            groups = (sequences + 49) // 50
+            layout.addWidget(QLabel(f'{sequences} sequences in {groups} group(s), up to 50 per group.'))
         preview = QPlainTextEdit()
         preview.setReadOnly(True)
         preview.setPlainText(payload)
@@ -149,6 +209,7 @@ class PreviewDialog(QDialog):
 class ExternalWorker(QObject):
     succeeded = pyqtSignal(object)
     failed = pyqtSignal(str)
+    progress = pyqtSignal(int, int)
 
     def __init__(self, service: str, batch: ExternalBatch):
         super().__init__()
@@ -159,7 +220,7 @@ class ExternalWorker(QObject):
     def run(self) -> None:
         try:
             client = ImgtClient() if self.service == "IMGT" else ArrestClient()
-            result = run_analysis_job(self.service, self.batch, client)
+            result = run_analysis_job(self.service, self.batch, client, self.progress.emit)
         except (ExternalAnalysisError, OSError, ValueError) as exc:
             self.failed.emit(str(exc))
             return
@@ -198,16 +259,16 @@ class MainWindow(QMainWindow):
         # Left sidebar navigation
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(240)
+        sidebar.setFixedWidth(208)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(16, 24, 16, 24)
+        sidebar_layout.setContentsMargins(16, 24, 16, 16)
         sidebar_layout.setSpacing(8)
 
         # App brand in sidebar
         brand_container = QWidget()
         brand_layout = QHBoxLayout(brand_container)
-        brand_layout.setContentsMargins(8, 8, 8, 16)
-        brand_layout.setSpacing(12)
+        brand_layout.setContentsMargins(0, 0, 0, 24)
+        brand_layout.setSpacing(8)
         brand_icon = QLabel()
         brand_icon.setObjectName("SidebarBrandIcon")
         brand_icon.setFixedSize(40, 40)
@@ -226,7 +287,11 @@ class MainWindow(QMainWindow):
         brand_layout.addStretch()
         sidebar_layout.addWidget(brand_container)
 
-        # Navigation buttons
+        navigation_label = QLabel("WORKSPACE")
+        navigation_label.setObjectName("SidebarSectionLabel")
+        sidebar_layout.addWidget(navigation_label)
+
+        # Navigation labels and actions remain stable across the workflow.
         self.nav_buttons = []
         nav_items = [
             ("Run", "Run validation & file detection"),
@@ -239,6 +304,7 @@ class MainWindow(QMainWindow):
             btn = QPushButton(label)
             btn.setObjectName("NavButton")
             btn.setCheckable(True)
+            btn.setAccessibleName(label)
             btn.setToolTip(tooltip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(partial(self._switch_page, idx))
@@ -252,12 +318,13 @@ class MainWindow(QMainWindow):
         self.status_badge = QLabel("Ready")
         self.status_badge.setObjectName("SidebarStatusBadge")
         self.status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_badge.setFixedHeight(32)
+        self.status_badge.setWordWrap(True)
+        self.status_badge.setMinimumHeight(36)
         self.status_badge.setAccessibleName("Application status")
         sidebar_layout.addWidget(self.status_badge)
 
         # Version info
-        version_label = QLabel("v0.2.0  •  Python 3.11+")
+        version_label = QLabel("IGHV  ·  v0.2.0")
         version_label.setObjectName("SidebarVersion")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sidebar_layout.addWidget(version_label)
@@ -268,26 +335,35 @@ class MainWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("ContentArea")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(32, 24, 32, 24)
-        content_layout.setSpacing(20)
+        content_layout.setContentsMargins(24, 20, 24, 16)
+        content_layout.setSpacing(16)
 
-        # Top bar with privacy badge
+        # A persistent page title makes the current stage explicit.
         top_bar = QHBoxLayout()
         top_bar.setSpacing(16)
+        title_column = QVBoxLayout()
+        title_column.setSpacing(2)
+        self.page_step = QLabel("01 / PREPARE")
+        self.page_step.setObjectName("PageStep")
+        self.page_title = QLabel("Run")
+        self.page_title.setObjectName("PageTitle")
+        self.page_title.setAccessibleName("Current page")
+        title_column.addWidget(self.page_step)
+        title_column.addWidget(self.page_title)
+        top_bar.addLayout(title_column, 1)
         privacy = QLabel("Local sample mapping")
         privacy.setObjectName("PrivacyBadge")
         privacy.setToolTip(
             "Raw files and linkage data are stored locally. External sending requires explicit confirmation."
         )
-        privacy.setFixedHeight(32)
+        privacy.setFixedHeight(28)
         top_bar.addWidget(privacy)
-        top_bar.addStretch()
         content_layout.addLayout(top_bar)
 
         # Metric cards
         cards = QHBoxLayout()
-        cards.setSpacing(16)
-        self.row_card = MetricCard("Merged rows", "Leader + FR1", Palette.accent_hover)
+        cards.setSpacing(12)
+        self.row_card = MetricCard("Merged rows", "Leader + FR1", Palette.ink)
         self.control_card = MetricCard("Control errors", "Requires follow-up", Palette.error)
         self.support_card = MetricCard("FR1 support", "Exact overlaps", Palette.success)
         for card in (self.row_card, self.control_card, self.support_card):
@@ -307,7 +383,7 @@ class MainWindow(QMainWindow):
         # Footer
         footer = QHBoxLayout()
         footer_text = QLabel(
-            "IGHV  •  raw files are never modified  •  external sending requires confirmation"
+            "Raw files stay unchanged. External sending always requires confirmation."
         )
         footer_text.setObjectName("FooterText")
         footer.addWidget(footer_text)
@@ -320,17 +396,16 @@ class MainWindow(QMainWindow):
     def _run_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 18, 20, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
         intro = QLabel(
-            "1  RUN   Select the folder containing Leader and FR1 output. "
-            "The app reads files without modifying raw data."
+            "Select the folder containing Leader and FR1 output, then validate the run."
         )
         intro.setObjectName("PageIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
-        group = QGroupBox("Select and validate run folder")
+        group = QGroupBox("Run folder")
         grid = QGridLayout(group)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
@@ -344,17 +419,23 @@ class MainWindow(QMainWindow):
         self.validate_button = QPushButton("Validate run")
         self.validate_button.setObjectName("PrimaryButton")
         self.validate_button.clicked.connect(self._validate)
-        grid.addWidget(QLabel("Folder"), 0, 0)
-        grid.addWidget(self.run_edit, 0, 1)
-        grid.addWidget(browse, 0, 2)
-        grid.addWidget(self.validate_button, 0, 3)
+        self.run_edit.setPlaceholderText("Choose a folder with Leader and FR1 files")
+        grid.addWidget(self.run_edit, 0, 0)
+        grid.addWidget(browse, 0, 1)
+        grid.addWidget(self.validate_button, 0, 2)
+        grid.setColumnStretch(0, 1)
         layout.addWidget(group)
 
         self.file_table = QTableWidget(0, 5)
         self.file_table.setHorizontalHeaderLabels(["S-no.", "Sample", "Leader rows", "FR1 rows", "Status"])
         self._configure_table(self.file_table)
         self.file_table.setAccessibleName("Detected sample files")
-        layout.addWidget(self.file_table, 1)
+        self.file_section = TableSection(
+            self.file_table, "Detected samples",
+            "No run has been validated.\nChoose a run folder above to review detected samples and file counts.",
+            "samples",
+        )
+        layout.addWidget(self.file_section, 1)
         self.run_message = QLabel("Select a run folder and validate before export.")
         self.run_message.setObjectName("InfoCallout")
         self.run_message.setWordWrap(True)
@@ -364,10 +445,10 @@ class MainWindow(QMainWindow):
     def _controls_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 18, 20, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
         intro = QLabel(
-            "2  CONTROLS   Run controls are shown separately for Leader and FR1. "
+            "Run controls are shown separately for Leader and FR1. "
             "Status must be assessed according to local procedure."
         )
         intro.setObjectName("PageIntro")
@@ -377,19 +458,30 @@ class MainWindow(QMainWindow):
         self.control_table.setHorizontalHeaderLabels(["Control", "Target", "Status", "Details"])
         self._configure_table(self.control_table)
         self.control_table.setAccessibleName("Run controls")
-        layout.addWidget(self.control_table, 1)
+        self.control_section = TableSection(
+            self.control_table, "Quality controls",
+            "No controls to review yet.\nValidate a run on the Run page to load Leader and FR1 control results.",
+            "controls",
+        )
+        self.control_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        for column in range(3):
+            self.control_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self.control_section, 1)
+        note = QLabel("Control results support manual review. Assess all findings according to local procedure.")
+        note.setObjectName("InfoCallout")
+        note.setWordWrap(True)
+        layout.addWidget(note)
         return page
 
     def _external_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 18, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
         information = QLabel(
-            "3  EXTERNAL ANALYSIS   Select Leader and FR1 sequences. Before sending, "
-            "the sample number is replaced with a random external ID. Only the FASTA header and "
-            "nucleotide sequence are sent."
+            "Select Leader and FR1 sequences for analysis. Sending replaces local sample identifiers "
+            "with random external IDs and includes only the FASTA header and nucleotide sequence."
         )
         information.setObjectName("PrivacyCallout")
         information.setWordWrap(True)
@@ -398,14 +490,25 @@ class MainWindow(QMainWindow):
         filter_bar = QHBoxLayout()
         self.candidate_search = QLineEdit()
         self.candidate_search.setPlaceholderText('Search sample or target')
+        self.candidate_search.setClearButtonEnabled(True)
         self.candidate_search.setAccessibleName('Search analysis candidates')
         self.target_filter = QComboBox()
         self.target_filter.addItems(['All targets', 'Leader', 'FR1'])
         self.target_filter.setAccessibleName('Filter target')
+        self.target_filter.setMinimumWidth(128)
+        self.target_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.selection_count = QLabel('0 selected')
+        self.selection_count.setObjectName("SelectionCount")
+        self.selection_count.setAccessibleName("Selected analysis candidates")
+        self.selection_count.setToolTip("The selection includes candidates hidden by the current filters.")
+        self.select_candidates_button = QPushButton("Select reads ≥2.5 %")
+        self.select_candidates_button.setEnabled(False)
+        self.select_candidates_button.setToolTip("Select all rows meeting the analysis threshold, including rows hidden by filters.")
+        self.select_candidates_button.clicked.connect(self._select_candidates)
         filter_bar.addWidget(self.candidate_search, 1)
         filter_bar.addWidget(self.target_filter)
         filter_bar.addWidget(self.selection_count)
+        filter_bar.addWidget(self.select_candidates_button)
         layout.addLayout(filter_bar)
         self.candidate_search.textChanged.connect(self._filter_candidates)
         self.target_filter.currentTextChanged.connect(self._filter_candidates)
@@ -429,41 +532,40 @@ class MainWindow(QMainWindow):
         self._configure_table(self.candidate_table)
         candidate_header = self.candidate_table.horizontalHeader()
         candidate_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        candidate_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        candidate_header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
         candidate_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         candidate_header.setSectionResizeMode(10, QHeaderView.ResizeMode.Interactive)
-        self.candidate_table.setColumnWidth(3, 200)
-        self.candidate_table.setColumnWidth(10, 280)
-        candidate_header.setMinimumSectionSize(58)
+        self.candidate_table.setColumnWidth(3, 164)
+        self.candidate_table.setColumnWidth(10, 220)
+        candidate_header.setMinimumSectionSize(54)
+        candidate_header.setStretchLastSection(True)
         self.candidate_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self.candidate_table.setAccessibleName("Leader and FR1 candidates for external analysis")
-        layout.addWidget(self.candidate_table, 1)
+        self.candidate_section = TableSection(
+            self.candidate_table, "Sequence candidates",
+            "No sequences are loaded.\nValidate a run on the Run page, then select candidates for analysis.",
+            "candidates",
+        )
+        layout.addWidget(self.candidate_section, 1)
 
-        action_bar = QFrame()
-        action_bar.setObjectName("ActionBar")
-        action_grid = QGridLayout(action_bar)
-        action_grid.setContentsMargins(12, 10, 12, 10)
-        action_grid.setHorizontalSpacing(8)
-        action_grid.setVerticalSpacing(8)
-        local_label = QLabel("LOCAL")
-        local_label.setObjectName("ActionLabel")
-        external_label = QLabel("EXTERNAL")
-        external_label.setObjectName("ActionLabel")
-        self.select_candidates_button = QPushButton("Select reads ≥2.5 %")
-        self.select_candidates_button.clicked.connect(self._select_candidates)
-        preview_fasta = QPushButton("Preview FASTA")
-        preview_fasta.clicked.connect(self._preview_fasta)
-        export_fasta = QPushButton("Save FASTA locally")
-        export_fasta.clicked.connect(self._export_fasta)
+        # Separate sequence submission from the evidence and report workflow.
+        action_groups = QHBoxLayout()
+        action_groups.setSpacing(12)
+        analysis_group = QGroupBox("Analysis · selected sequences")
+        analysis_grid = QGridLayout(analysis_group)
+        analysis_grid.setSpacing(8)
+        self.preview_fasta_button = QPushButton("Preview FASTA")
+        self.preview_fasta_button.setEnabled(False)
+        self.preview_fasta_button.clicked.connect(self._preview_fasta)
+        self.save_fasta_button = QPushButton("Save FASTA locally")
+        self.save_fasta_button.setEnabled(False)
+        self.save_fasta_button.clicked.connect(self._export_fasta)
         self.send_imgt_button = QPushButton("Send to IMGT")
         self.send_imgt_button.setObjectName("PrimaryButton")
         self.send_imgt_button.setEnabled(False)
         self.send_imgt_button.clicked.connect(self._send_imgt)
         self.send_arrest_button = QPushButton("Send to ARResT")
-        self.send_arrest_button.setObjectName("PrimaryButton")
         self.send_arrest_button.setEnabled(False)
         self.send_arrest_button.clicked.connect(self._send_arrest)
         self.capture_button = QPushButton("Capture IMGT evidence (Edge)")
@@ -473,25 +575,33 @@ class MainWindow(QMainWindow):
         )
         self.capture_button.setEnabled(False)
         self.capture_button.clicked.connect(self._capture_imgt_evidence)
-        self.view_evidence_button = QPushButton('View IMGT evidence')
+        self.view_evidence_button = QPushButton('View evidence')
+        self.view_evidence_button.setAccessibleName("View IMGT evidence")
         self.view_evidence_button.setEnabled(False)
         self.view_evidence_button.clicked.connect(self._view_evidence)
         self.evidence_manifest = None
-        self.report_button = QPushButton("Generate report draft")
+        self.report_button = QPushButton("Report draft")
+        self.report_button.setAccessibleName("Generate report draft")
+        self.report_button.setToolTip("After completed IMGT analysis, generate report drafts in Word, PDF and Excel per sample.")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
-        action_grid.addWidget(local_label, 0, 0)
-        action_grid.addWidget(self.select_candidates_button, 0, 1)
-        action_grid.addWidget(preview_fasta, 0, 2)
-        action_grid.addWidget(export_fasta, 0, 3)
-        action_grid.addWidget(external_label, 1, 0)
-        action_grid.addWidget(self.send_imgt_button, 1, 1)
-        action_grid.addWidget(self.send_arrest_button, 1, 2)
-        action_grid.addWidget(self.capture_button, 1, 3)
-        action_grid.addWidget(self.report_button, 2, 1)
-        action_grid.addWidget(self.view_evidence_button, 2, 2)
-        action_grid.setColumnStretch(4, 1)
-        layout.addWidget(action_bar)
+        analysis_grid.addWidget(self.preview_fasta_button, 0, 0)
+        analysis_grid.addWidget(self.save_fasta_button, 0, 1)
+        analysis_grid.addWidget(self.send_imgt_button, 1, 0)
+        analysis_grid.addWidget(self.send_arrest_button, 1, 1)
+        analysis_grid.setColumnStretch(0, 1)
+        analysis_grid.setColumnStretch(1, 1)
+        documentation_group = QGroupBox("Documentation · evidence & drafts")
+        documentation_grid = QGridLayout(documentation_group)
+        documentation_grid.setSpacing(8)
+        documentation_grid.addWidget(self.capture_button, 0, 0, 1, 2)
+        documentation_grid.addWidget(self.view_evidence_button, 1, 0)
+        documentation_grid.addWidget(self.report_button, 1, 1)
+        documentation_grid.setColumnStretch(0, 1)
+        documentation_grid.setColumnStretch(1, 1)
+        action_groups.addWidget(analysis_group, 1)
+        action_groups.addWidget(documentation_group, 1)
+        layout.addLayout(action_groups)
 
         self.external_progress = QProgressBar()
         self.external_progress.setRange(0, 0)
@@ -512,22 +622,23 @@ class MainWindow(QMainWindow):
     def _export_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 18, 20, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
         intro = QLabel(
-            f"4  EXPORT   Create a single compatible merged sheet with {len(HEADERS)} columns. "
+            f"EXPORT · Create a single compatible merged sheet with {len(HEADERS)} columns. "
             "Existing files are overwritten only after confirmation."
         )
         intro.setObjectName("PageIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
-        excel_group = QGroupBox("Merged Excel workbook")
+        excel_group = QGroupBox("1 · Choose workbook destination")
         grid = QGridLayout(excel_group)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(12)
         self.output_edit = QLineEdit()
         self.output_edit.setClearButtonEnabled(True)
         self.output_edit.setAccessibleName("Filename for merged Excel")
+        self.output_edit.setPlaceholderText("Validate a run to suggest a destination, or select an .xlsx file")
         output_browse = QPushButton("Select file")
         output_browse.clicked.connect(self._browse_output)
         self.export_button = QPushButton("Export merged.xlsx")
@@ -543,24 +654,42 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Output"), 0, 0)
         grid.addWidget(self.output_edit, 0, 1)
         grid.addWidget(output_browse, 0, 2)
-        grid.addWidget(self.highlight_excel_checkbox, 1, 0, 1, 2)
-        grid.addWidget(self.export_button, 1, 2)
+        grid.setColumnStretch(1, 1)
         layout.addWidget(excel_group)
+        formatting_group = QGroupBox("2 · Workbook formatting")
+        formatting_layout = QVBoxLayout(formatting_group)
+        formatting_layout.addWidget(self.highlight_excel_checkbox)
         export_note = QLabel(
-            "The Excel file contains a single sheet, formulas, and conditional formatting. "
-            "Select yellow highlighting if candidates should also be visible in the workbook."
+            "The merged workbook contains one sheet with formulas and conditional formatting. "
+            "Yellow candidate highlighting is optional and off by default."
         )
-        export_note.setObjectName("InfoCallout")
+        export_note.setObjectName("SecondaryText")
         export_note.setWordWrap(True)
-        layout.addWidget(export_note)
+        formatting_layout.addWidget(export_note)
+        layout.addWidget(formatting_group)
+        export_row = QHBoxLayout()
+        self.export_readiness = QLabel("Validate a run on the Run page before exporting.")
+        self.export_readiness.setObjectName("SecondaryText")
+        self.export_readiness.setWordWrap(True)
+        export_row.addWidget(self.export_readiness, 1)
+        export_row.addWidget(self.export_button)
+        layout.addLayout(export_row)
+        reports_note = QLabel(
+            "Need a report package? On IMGT & ARResT, complete IMGT analysis and choose Report draft "
+            "for Word, PDF and Excel per sample. Each sample workbook includes an overview, "
+            "a sheet per rearrangement, and fields for manual LVMS and Sanger documentation."
+        )
+        reports_note.setObjectName("InfoCallout")
+        reports_note.setWordWrap(True)
+        layout.addWidget(reports_note)
         layout.addStretch()
         return page
 
     def _settings_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 18, 20, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
         intro = QLabel(
             "SETTINGS   Local default choices for this Windows user. "
             "Clinical control limits are versioned and write-protected."
@@ -578,6 +707,13 @@ class MainWindow(QMainWindow):
         self.expected_spin = QSpinBox()
         self.expected_spin.setRange(1, 96)
         self.expected_spin.setValue(int(self.settings.value("expectedSamples", 24)))
+        self.expected_spin.setAccessibleName("Expected samples per target")
+        self.lymphotrack_version_edit = QLineEdit(self.settings.value("lymphotrackVersion", "2.4.6"))
+        self.lymphotrack_version_edit.setAccessibleName("LymphoTrack version")
+        self.lymphotrack_version_edit.setPlaceholderText("Optional · not specified when empty")
+        self.lymphotrack_version_edit.setToolTip(
+            "Enter the version from the analysis software or run metadata. An empty value is reported as not specified."
+        )
         save = QPushButton("Save settings")
         save.setObjectName("PrimaryButton")
         save.setMinimumWidth(210)
@@ -587,27 +723,28 @@ class MainWindow(QMainWindow):
         save_row.addWidget(save)
         form.addRow("Default data folder", self.default_data_edit)
         form.addRow("Expected samples per target", self.expected_spin)
+        form.addRow("LymphoTrack version", self.lymphotrack_version_edit)
         form.addRow("", save_row)
         layout.addWidget(group)
 
         rules = QGroupBox("Control limits (write-protected)")
         rules_layout = QVBoxLayout(rules)
-        rules_layout.addWidget(
-            QLabel(
+        rules_text = QLabel(
                 "IGH-PK ≥2.5 % | IGH-SHM ≥2.5 % and mutation ≥2.0 % | "
                 "NGS NEG <1.0 % | NTC <10 000 reads\n"
                 "Leader and FR1 are controlled separately. Samples are assessed manually."
-            )
         )
+        rules_text.setWordWrap(True)
+        rules_layout.addWidget(rules_text)
         layout.addWidget(rules)
         layout.addStretch()
         return page
 
     def _configure_table(self, table: QTableWidget) -> None:
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        table.horizontalHeader().setMinimumHeight(38)
+        table.horizontalHeader().setMinimumHeight(34)
         table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(34)
+        table.verticalHeader().setDefaultSectionSize(30)
         table.setAlternatingRowColors(True)
         table.setShowGrid(False)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -626,6 +763,8 @@ class MainWindow(QMainWindow):
 
     def _switch_page(self, index: int) -> None:
         self.page_stack.setCurrentIndex(index)
+        self.page_title.setText(self.nav_buttons[index].text())
+        self.page_step.setText(("01 / PREPARE", "02 / REVIEW", "03 / ANALYZE", "04 / EXPORT", "PREFERENCES")[index])
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == index)
 
@@ -664,6 +803,7 @@ class MainWindow(QMainWindow):
             self.result = self.service.process(Path(self.run_edit.text()), self.expected_spin.value())
         except (ValidationError, OSError) as exc:
             self.result = None
+            self._clear_result_views()
             self.export_button.setEnabled(False)
             self.send_imgt_button.setEnabled(False)
             self.send_arrest_button.setEnabled(False)
@@ -687,6 +827,19 @@ class MainWindow(QMainWindow):
         else:
             self.run_message.setText("Run is structurally validated and ready for export.")
 
+    def _clear_result_views(self) -> None:
+        """Discard visual results when the newly requested run cannot be validated."""
+        for table in (self.file_table, self.control_table, self.candidate_table):
+            table.setRowCount(0)
+        for card in (self.row_card, self.control_card, self.support_card):
+            card.value.setText("0")
+        self._update_selection_count()
+        self.external_status.setText("No validated run is loaded. Validate a run before analysis.")
+        self.run_message.setText("Validation failed. Check the folder and validate the run again.")
+        self.export_readiness.setText("Validate a run on the Run page before exporting.")
+        for button in (self.select_candidates_button, self.preview_fasta_button, self.save_fasta_button):
+            button.setEnabled(False)
+
     def _populate_result(self) -> None:
         assert self.result is not None
         manifest = self.result.manifest
@@ -704,6 +857,11 @@ class MainWindow(QMainWindow):
         self._fill_control_table(self.result.qc.controls)
         self._fill_candidates()
         self.capture_button.setEnabled(True)
+        for button in (self.select_candidates_button, self.preview_fasta_button, self.save_fasta_button):
+            button.setEnabled(True)
+        self.export_readiness.setText(
+            f"{len(self.result.rows)} merged rows ready. Review controls before exporting."
+        )
         self.row_card.value.setText(str(len(self.result.rows)))
         self.control_card.value.setText(
             str(sum(item.status == "FEIL" for item in self.result.qc.controls))
@@ -796,6 +954,7 @@ class MainWindow(QMainWindow):
             if sample_cell and target_cell:
                 matches = query in (sample_cell.text() + ' ' + target_cell.text()).casefold()
                 self.candidate_table.setRowHidden(row, not matches or (target != 'All targets' and target_cell.text() != target))
+        self.candidate_section.refresh()
 
     def _update_selection_count(self) -> None:
         count = sum(self.candidate_table.item(row, 0) is not None and
@@ -897,6 +1056,15 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, "Cannot send", str(exc))
             return
+        if service == 'ARResT' and self.arrest_result:
+            completed = {record.external_id for record in self.arrest_result.records}
+            batch = replace(batch, candidates=tuple(
+                candidate for candidate in batch.candidates if candidate.external_id not in completed
+            ))
+            if not batch.candidates:
+                QMessageBox.information(self, 'ARResT complete',
+                                        'All selected sequences already have an ARResT result.')
+                return
         dialog = PayloadDialog(service, endpoint, batch.fasta, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -924,6 +1092,8 @@ class MainWindow(QMainWindow):
             f"Sending {len(batch.candidates)} pseudonymized sequences to {service} …"
         )
         self.external_progress.setVisible(True)
+        self.external_progress.setRange(0, 0)
+        self.external_progress.setFormat('Analyzing groups …')
         self._set_status(f"{service} in progress", "busy")
         thread = QThread(self)
         worker = ExternalWorker(service, batch)
@@ -931,6 +1101,7 @@ class MainWindow(QMainWindow):
         thread.started.connect(worker.run)
         worker.succeeded.connect(partial(self._external_succeeded, service, batch))
         worker.failed.connect(partial(self._external_failed, service))
+        worker.progress.connect(self._external_progressed)
         worker.succeeded.connect(thread.quit)
         worker.failed.connect(thread.quit)
         worker.succeeded.connect(worker.deleteLater)
@@ -939,6 +1110,12 @@ class MainWindow(QMainWindow):
         self._external_thread = thread
         self._external_worker = worker
         thread.start()
+
+    @pyqtSlot(int, int)
+    def _external_progressed(self, completed: int, total: int) -> None:
+        self.external_progress.setRange(0, total)
+        self.external_progress.setValue(completed)
+        self.external_progress.setFormat(f'Groups completed: {completed} / {total}')
 
     def _external_succeeded(
         self,
@@ -949,6 +1126,7 @@ class MainWindow(QMainWindow):
         if not self.result:
             return
         if isinstance(result, AnalysisJobResult):
+            previous_arrest = self.arrest_result
             accepted = []
             errors = dict(result.errors)
             for part, part_result in result.parts:
@@ -966,7 +1144,12 @@ class MainWindow(QMainWindow):
                 self.capture_button.setEnabled(bool(records))
                 self.report_button.setEnabled(not errors and bool(records))
             else:
-                records = tuple(record for _, part in accepted for record in part.records)
+                selected_ids = set((self.external_batch or batch).candidate_ids)
+                merged_records = {record.external_id: record for record in previous_arrest.records
+                                  if record.external_id in selected_ids} if previous_arrest else {}
+                merged_records.update({record.external_id: record
+                                       for _, part in accepted for record in part.records})
+                records = tuple(merged_records.values())
                 self.arrest_result = ArrestBatchResult(records, '', '') if records else None
                 self.report_button.setEnabled(self._has_complete_imgt())
             self._refresh_external_table()
@@ -1045,6 +1228,7 @@ class MainWindow(QMainWindow):
                 self.imgt_result,
                 self.arrest_result,
                 evidence=self.evidence_manifest,
+                lymphotrack_version=self.lymphotrack_version_edit.text().strip(),
             )
         except (OSError, PrivacyError, ValueError) as exc:
             QMessageBox.critical(self, "Report failed", str(exc))
@@ -1252,235 +1436,151 @@ class MainWindow(QMainWindow):
     def _save_settings(self) -> None:
         self.settings.setValue("defaultDataDirectory", self.default_data_edit.text())
         self.settings.setValue("expectedSamples", self.expected_spin.value())
+        self.settings.setValue("lymphotrackVersion", self.lymphotrack_version_edit.text().strip())
         self.run_edit.setText(self.default_data_edit.text())
         QMessageBox.information(self, "Settings", "Local settings saved.")
 
     def _style(self) -> None:
+        # Qt stylesheets replace the platform arrow renderer. Keep small vector
+        # arrows available for the lifetime of this window, including offscreen QA.
+        self._control_icons = QTemporaryDir()
+        arrow_directory = Path(self._control_icons.path()) if self._control_icons.isValid() else None
+        for name, points in (("down", "1,1 5,5 9,1"), ("up", "1,5 5,1 9,5")):
+            if arrow_directory is None:
+                break
+            (arrow_directory / f"{name}.svg").write_text(
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6">'
+                f'<polyline points="{points}" fill="none" stroke="{Palette.ink}" stroke-width="1.5" '
+                'stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                encoding="utf-8",
+            )
+        down_arrow = (arrow_directory / "down.svg").as_posix() if arrow_directory else ""
+        up_arrow = (arrow_directory / "up.svg").as_posix() if arrow_directory else ""
         self.setStyleSheet(
             f"""
-            QMainWindow {{ background: {Palette.app_bg}; }}
-            QWidget {{
-                color: {Palette.ink};
-                font-family: "Segoe UI";
-                font-size: 10pt;
-            }}
-            QWidget#AppRoot {{ background: {Palette.app_bg}; }}
-            QWidget#ContentArea {{ background: {Palette.app_bg}; }}
-
-            QFrame#Sidebar {{
-                background: {Palette.panel};
-                border-right: 1px solid {Palette.border};
-            }}
-            QLabel#SidebarBrandIcon {{
-                background: {Palette.pale_accent};
-                border: 1px solid #C9B8E8;
-                border-radius: 8px;
-            }}
-            QLabel#SidebarAppTitle {{
-                color: {Palette.accent_hover};
-                font-family: "Segoe UI";
-                font-size: 16pt;
-                font-weight: 700;
-            }}
-            QLabel#SidebarAppSubtitle {{
-                color: {Palette.muted};
-                font-size: 8pt;
-                font-weight: 500;
-            }}
+            QMainWindow, QDialog {{ background: {Palette.app_bg}; }}
+            QWidget {{ color: {Palette.ink}; font-family: "Segoe UI"; font-size: 10pt; }}
+            QWidget#AppRoot, QWidget#ContentArea {{ background: {Palette.app_bg}; }}
+            QFrame#Sidebar {{ background: {Palette.sidebar}; border: 0; }}
+            QLabel#SidebarBrandIcon {{ background: {Palette.panel}; border-radius: 8px; }}
+            QLabel#SidebarAppTitle {{ color: {Palette.sidebar_text}; font-size: 18pt; font-weight: 700; }}
+            QLabel#SidebarAppSubtitle {{ color: {Palette.sidebar_muted}; font-size: 8pt; }}
+            QLabel#SidebarSectionLabel {{ color: {Palette.sidebar_muted}; font-size: 8pt; font-weight: 600; padding: 0 8px 4px; }}
             QPushButton#NavButton {{
-                background: transparent;
-                color: {Palette.ink};
-                border: none;
-                border-radius: 8px;
-                padding: 12px 16px;
-                text-align: left;
-                font-weight: 600;
-                font-size: 10pt;
+                background: transparent; color: {Palette.sidebar_text}; border: 2px solid transparent;
+                border-radius: 6px; padding: 10px 12px; text-align: left; font-weight: 600;
             }}
-            QPushButton#NavButton:hover {{
-                background: {Palette.pale_accent};
-                color: {Palette.accent};
-            }}
-            QPushButton#NavButton:checked {{
-                background: {Palette.accent};
-                color: white;
-            }}
-            QPushButton#NavButton:checked:hover {{
-                background: {Palette.accent_hover};
-            }}
+            QPushButton#NavButton:hover {{ background: {Palette.sidebar_hover}; }}
+            QPushButton#NavButton:checked {{ background: {Palette.accent}; color: white; }}
+            QPushButton#NavButton:checked:hover {{ background: {Palette.accent_hover}; }}
+            QPushButton#NavButton:focus {{ border-color: {Palette.sidebar_muted}; }}
             QLabel#SidebarStatusBadge {{
-                background: {Palette.subtle};
-                color: {Palette.accent_hover};
-                border: 1px solid {Palette.border};
-                border-radius: 8px;
-                padding: 6px 12px;
-                font-weight: 700;
-                font-size: 9pt;
+                background: {Palette.sidebar_hover}; color: {Palette.sidebar_text};
+                border: 1px solid {Palette.sidebar_hover}; border-radius: 6px;
+                padding: 6px 8px; font-weight: 600; font-size: 9pt;
             }}
-            QLabel#SidebarStatusBadge[tone="busy"] {{
-                background: {Palette.pale_accent}; color: {Palette.accent}; border-color: #C9B8E8;
-            }}
-            QLabel#SidebarStatusBadge[tone="success"] {{
-                background: {Palette.pale_success}; color: {Palette.success}; border-color: #CFE4D4;
-            }}
-            QLabel#SidebarStatusBadge[tone="error"] {{
-                background: {Palette.pale_error}; color: {Palette.error}; border-color: #EFCBC9;
-            }}
-            QLabel#SidebarVersion {{
-                color: {Palette.muted};
-                font-size: 8pt;
-            }}
-
+            QLabel#SidebarStatusBadge[tone="busy"] {{ background: {Palette.accent_soft}; color: {Palette.accent_hover}; }}
+            QLabel#SidebarStatusBadge[tone="success"] {{ background: {Palette.pale_success}; color: {Palette.success}; }}
+            QLabel#SidebarStatusBadge[tone="error"] {{ background: {Palette.pale_error}; color: {Palette.error}; }}
+            QLabel#SidebarVersion {{ color: {Palette.sidebar_muted}; font-size: 8pt; padding-top: 4px; }}
+            QLabel#PageStep {{ color: {Palette.muted}; font-size: 8pt; font-weight: 600; }}
+            QLabel#PageTitle {{ color: {Palette.ink}; font-size: 22pt; font-weight: 700; }}
             QLabel#PrivacyBadge {{
-                background: {Palette.pale_success};
-                color: {Palette.success};
-                border: 1px solid #CFE4D4;
-                border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 8pt;
-                font-weight: 700;
+                background: {Palette.panel}; color: {Palette.accent_hover}; border: 1px solid {Palette.border};
+                border-radius: 4px; padding: 4px 10px; font-size: 8pt; font-weight: 600;
             }}
-
-            QFrame#MetricCard {{
-                background: {Palette.panel};
-                border: 1px solid {Palette.border};
-                border-radius: 10px;
-            }}
-
-            QLabel#PageIntro, QLabel#InfoCallout, QLabel#PrivacyCallout,
-            QLabel#StatusCallout {{
-                border-radius: 8px;
-                padding: 11px 13px;
-            }}
-            QLabel#PageIntro {{
-                background: {Palette.pale_accent};
-                color: {Palette.accent_hover};
-                border: 1px solid #C9B8E8;
-                font-weight: 600;
+            QFrame#MetricCard {{ background: {Palette.panel}; border: 1px solid {Palette.border}; border-radius: 6px; }}
+            QLabel#MetricLabel {{ color: {Palette.ink}; font-size: 9pt; font-weight: 600; }}
+            QLabel#MetricValue {{ font-size: 22pt; font-weight: 600; }}
+            QLabel#MetricDescription {{ color: {Palette.muted}; font-size: 8pt; }}
+            QLabel#SectionTitle {{ color: {Palette.ink}; font-size: 10pt; font-weight: 600; }}
+            QLabel#SecondaryText {{ color: {Palette.muted}; font-size: 9pt; }}
+            QLabel#SelectionCount {{ color: {Palette.accent_hover}; font-size: 9pt; font-weight: 600; padding: 0 4px; }}
+            QLabel#PageIntro {{ color: {Palette.muted}; padding: 0; font-size: 10pt; }}
+            QLabel#InfoCallout, QLabel#StatusCallout, QLabel#PrivacyCallout {{
+                border-radius: 4px; padding: 8px 10px; font-size: 9pt;
             }}
             QLabel#InfoCallout, QLabel#StatusCallout {{
-                background: {Palette.subtle};
-                color: {Palette.muted};
-                border: 1px solid {Palette.border};
+                background: {Palette.subtle}; color: {Palette.muted}; border: 1px solid {Palette.border};
             }}
             QLabel#PrivacyCallout {{
-                background: {Palette.pale_success};
-                color: #3F6B4D;
-                border: 1px solid #CFE4D4;
-                font-weight: 600;
+                background: {Palette.pale_accent}; color: {Palette.accent_hover}; border: 1px solid {Palette.accent_soft};
             }}
-
+            QLabel#TableEmptyState {{
+                background: {Palette.panel}; color: {Palette.muted}; border: 1px solid {Palette.border};
+                border-radius: 6px; padding: 24px; font-size: 10pt;
+            }}
             QGroupBox {{
-                background: {Palette.panel};
-                border: 1px solid {Palette.border};
-                border-radius: 10px;
-                margin-top: 12px;
-                padding: 16px 14px 14px 14px;
-                font-weight: 700;
-                color: {Palette.accent_hover};
+                background: {Palette.panel}; color: {Palette.ink}; border: 1px solid {Palette.border};
+                border-radius: 6px; margin-top: 10px; padding: 12px 10px 10px; font-weight: 600;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 12px;
-                padding: 0 6px;
-                background: {Palette.panel};
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; background: {Palette.app_bg}; }}
+            QLineEdit, QSpinBox, QPlainTextEdit, QComboBox {{
+                background: {Palette.panel}; color: {Palette.ink}; border: 1px solid {Palette.border_strong};
+                border-radius: 4px; padding: 6px 8px; min-height: 20px;
+                selection-background-color: {Palette.accent}; selection-color: white;
             }}
-            QFrame#ActionBar {{
-                background: {Palette.subtle};
-                border: 1px solid {Palette.border};
-                border-radius: 9px;
+            QLineEdit:hover, QSpinBox:hover, QPlainTextEdit:hover, QComboBox:hover {{ border-color: {Palette.accent}; }}
+            QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus {{
+                border: 2px solid {Palette.accent}; padding: 5px 7px;
             }}
-            QLabel#ActionLabel {{
-                color: {Palette.muted};
-                font-size: 8pt;
-                font-weight: 700;
+            QComboBox {{ padding-right: 24px; }}
+            QComboBox:focus {{ padding-right: 23px; }}
+            QComboBox::drop-down {{ width: 22px; border: 0; }}
+            QComboBox::down-arrow {{ image: url("{down_arrow}"); width: 10px; height: 6px; }}
+            QSpinBox {{ padding-right: 24px; }}
+            QSpinBox:focus {{ padding-right: 23px; }}
+            QSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 20px; border: 0; }}
+            QSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border: 0; }}
+            QSpinBox::up-arrow {{ image: url("{up_arrow}"); width: 10px; height: 6px; }}
+            QSpinBox::down-arrow {{ image: url("{down_arrow}"); width: 10px; height: 6px; }}
+            QComboBox QAbstractItemView {{
+                background: {Palette.panel}; color: {Palette.ink}; border: 1px solid {Palette.border_strong};
+                selection-background-color: {Palette.accent_soft}; selection-color: {Palette.ink};
             }}
-
-            QLineEdit, QSpinBox, QPlainTextEdit {{
-                background: {Palette.panel};
-                color: {Palette.ink};
-                border: 1px solid {Palette.border};
-                border-radius: 7px;
-                padding: 8px 10px;
-                selection-background-color: {Palette.accent};
-                min-height: 20px;
-            }}
-            QLineEdit:hover, QSpinBox:hover, QPlainTextEdit:hover {{ border-color: #A89ABF; }}
-            QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus {{
-                border: 2px solid {Palette.accent};
-                padding: 7px 9px;
-            }}
-
             QPushButton {{
-                background: {Palette.panel};
-                color: {Palette.accent_hover};
-                border: 1px solid {Palette.border};
-                border-radius: 7px;
-                padding: 8px 13px;
-                min-height: 20px;
-                font-weight: 600;
+                background: {Palette.panel}; color: {Palette.ink}; border: 1px solid {Palette.border_strong};
+                border-radius: 4px; padding: 6px 10px; min-height: 20px; font-weight: 600; font-size: 9pt;
             }}
-            QPushButton:hover {{ background: {Palette.pale_accent}; border-color: #B49BD9; color: {Palette.accent_hover}; }}
-            QPushButton:pressed {{ background: #E5DAF3; border-color: {Palette.accent}; }}
-            QPushButton:focus {{ border: 2px solid {Palette.accent}; padding: 7px 12px; }}
-            QPushButton#PrimaryButton {{
-                background: {Palette.accent};
-                color: white;
-                border-color: {Palette.accent};
-                font-weight: 700;
-            }}
-            QPushButton#PrimaryButton:hover {{ background: {Palette.accent_hover}; border-color: {Palette.accent_hover}; color: white; }}
-            QPushButton#PrimaryButton:pressed {{ background: {Palette.accent_hover}; }}
-            QPushButton:disabled {{
-                color: #A89ABF;
-                background: #E6E1EF;
-                border-color: #E6E1EF;
-            }}
-
-            QCheckBox {{ color: {Palette.ink}; spacing: 8px; padding: 4px 0; }}
+            QPushButton:hover {{ background: {Palette.pale_accent}; border-color: {Palette.accent}; color: {Palette.accent_hover}; }}
+            QPushButton:pressed {{ background: {Palette.accent_soft}; border-color: {Palette.accent}; }}
+            QPushButton:focus {{ border: 2px solid {Palette.accent}; padding: 5px 9px; }}
+            QPushButton#PrimaryButton {{ background: {Palette.accent}; color: white; border-color: {Palette.accent}; }}
+            QPushButton#PrimaryButton:hover, QPushButton#PrimaryButton:pressed {{ background: {Palette.accent_hover}; color: white; }}
+            QPushButton#PrimaryButton:focus {{ border-color: {Palette.ink}; }}
+            QPushButton:disabled {{ color: {Palette.disabled_text}; background: {Palette.disabled_bg}; border-color: {Palette.border}; }}
+            QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {{ color: {Palette.disabled_text}; background: {Palette.disabled_bg}; }}
+            QCheckBox {{ color: {Palette.ink}; spacing: 8px; padding: 4px; border: 2px solid transparent; }}
+            QCheckBox:focus {{ border-color: {Palette.accent}; border-radius: 4px; }}
             QCheckBox::indicator {{ width: 18px; height: 18px; }}
-            QCheckBox::indicator:unchecked {{
-                background: white; border: 1px solid #A89ABF; border-radius: 4px;
-            }}
-            QCheckBox::indicator:checked {{
-                background: {Palette.accent}; border: 1px solid {Palette.accent}; border-radius: 4px;
-            }}
-
             QTableWidget {{
-                background: {Palette.panel};
-                alternate-background-color: {Palette.app_bg};
-                border: 1px solid {Palette.border};
-                border-radius: 8px;
-                gridline-color: transparent;
-                selection-background-color: #E5DAF3;
-                selection-color: {Palette.ink};
+                background: {Palette.panel}; alternate-background-color: {Palette.app_bg};
+                border: 1px solid {Palette.border}; border-radius: 4px; gridline-color: transparent;
+                selection-background-color: {Palette.accent_soft}; selection-color: {Palette.ink};
             }}
             QTableWidget:focus {{ border: 2px solid {Palette.accent}; }}
+            QTableWidget::item {{ padding: 3px 6px; }}
             QHeaderView::section {{
-                background: {Palette.accent_hover};
-                color: white;
-                padding: 8px 7px;
-                border: 0;
-                border-right: 1px solid #5A4787;
-                font-weight: 700;
+                background: {Palette.subtle}; color: {Palette.ink}; padding: 7px 6px;
+                border: 0; border-bottom: 1px solid {Palette.border}; border-right: 1px solid {Palette.border};
+                font-size: 9pt; font-weight: 600;
             }}
-            QTableCornerButton::section {{ background: {Palette.accent_hover}; border: 0; }}
-
-            QStackedWidget#PageStack {{
-                background: transparent;
-                border: none;
-            }}
-
-            QProgressBar {{ background: #E5DAF3; border: 0; border-radius: 2px; }}
+            QTableCornerButton::section {{ background: {Palette.subtle}; border: 0; }}
+            QStackedWidget#PageStack {{ background: transparent; border: 0; }}
+            QTabWidget::pane {{ border: 1px solid {Palette.border}; background: {Palette.panel}; border-radius: 4px; }}
+            QTabBar::tab {{ background: {Palette.subtle}; color: {Palette.muted}; border: 1px solid {Palette.border}; padding: 8px 16px; }}
+            QTabBar::tab:selected {{ background: {Palette.panel}; color: {Palette.accent_hover}; border-bottom: 2px solid {Palette.accent}; }}
+            QTabBar::tab:focus {{ border-color: {Palette.accent}; }}
+            QProgressBar {{ background: {Palette.accent_soft}; border: 0; border-radius: 2px; }}
             QProgressBar::chunk {{ background: {Palette.accent}; border-radius: 2px; }}
-
-            QLabel#FooterText {{
-                color: {Palette.muted};
-                font-size: 8pt;
-            }}
-
-            QToolTip {{
-                background: {Palette.accent_hover}; color: white; border: 0; padding: 6px;
-            }}
+            QScrollArea {{ background: {Palette.panel}; border: 1px solid {Palette.border}; border-radius: 4px; }}
+            QLabel#EvidenceImage {{ background: {Palette.panel}; color: {Palette.muted}; }}
+            QScrollBar:vertical {{ background: {Palette.subtle}; width: 12px; margin: 0; }}
+            QScrollBar:horizontal {{ background: {Palette.subtle}; height: 12px; margin: 0; }}
+            QScrollBar::handle {{ background: {Palette.border_strong}; border-radius: 4px; min-height: 24px; min-width: 24px; }}
+            QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+            QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+            QLabel#FooterText {{ color: {Palette.muted}; font-size: 8pt; }}
+            QToolTip {{ background: {Palette.sidebar}; color: {Palette.sidebar_text}; border: 0; padding: 6px; }}
             """
         )
