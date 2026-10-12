@@ -98,7 +98,7 @@ def test_excel_layout_includes_external_id_and_molecule(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_report_package_writes_word_and_pdf(tmp_path: Path) -> None:
+def test_report_package_writes_word_and_excel(tmp_path: Path) -> None:
     from igh_merge.external import parse_imgt_full_result
 
     sys_path = Path(__file__).parents[1] / "src"
@@ -134,7 +134,8 @@ def test_report_package_writes_word_and_pdf(tmp_path: Path) -> None:
     )
     pdf = directory / "SYN_LOCAL_ONLY_IGHV_report_draft.pdf"
     docx = directory / "SYN_LOCAL_ONLY_IGHV_report_draft.docx"
-    assert pdf.exists() and pdf.stat().st_size > 1_000
+    assert not pdf.exists()
+    assert (directory / 'SYN_LOCAL_ONLY_IGHV_analysis.xlsx').is_file()
     assert docx.exists() and docx.stat().st_size > 5_000
     # Word file is a valid zip (docx) and contains the External ID we used.
     import zipfile
