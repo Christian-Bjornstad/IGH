@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .models import MergedRow
+from .matching import exact_supporting_leaders
 
 
 def analysis_candidate_indices(rows: Sequence[MergedRow]) -> frozenset[int]:
@@ -26,14 +27,16 @@ def is_functional_group_candidate(
     if source.percent_total_reads >= 2.5:
         return True
 
-    label = f"Leader-{source.rank}"
     return any(
         row.sample == leader.sample
         and row.target == "FR1"
         and row.source.percent_total_reads >= 2.5
         and row.source.in_frame.strip().upper() == "Y"
         and row.source.no_stop_codon.strip().upper() == "Y"
-        and label in row.comment.replace("(", "").replace(")", "").split()
+        and any(
+            supported is leader
+            for supported in exact_supporting_leaders(row, rows, functional_only=True)
+        )
         for row in rows
     )
 

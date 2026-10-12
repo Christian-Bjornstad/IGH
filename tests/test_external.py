@@ -313,6 +313,14 @@ def test_arrest_client_posts_no_local_sample(monkeypatch):
     assert captured["result_url"] == "https://bat.infspire.org/results/public.tsv"
 
 
+def test_arrest_client_rejects_oversized_request_before_network(monkeypatch):
+    batch = create_external_batch('2099_01_02', [(i, merged_row()) for i in range(51)])
+    monkeypatch.setattr('igh_merge.external.requests.post',
+                        lambda *a, **k: pytest.fail('oversized batch reached network'))
+    with pytest.raises(ValueError, match='50'):
+        ArrestClient().submit(batch)
+
+
 def test_results_are_saved_locally_with_mapping(tmp_path):
     batch = candidate_batch()
     parameters, airr = imgt_text()

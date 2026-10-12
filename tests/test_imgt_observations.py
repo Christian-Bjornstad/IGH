@@ -45,6 +45,25 @@ def test_identity_counts_follow_selected_event_value():
     assert record.selected_identity_counts == (99, 100)
 
 
+@pytest.mark.parametrize(
+    ("raw_length", "parsed_length"), [("5", 5), ("X", None), ("", None)]
+)
+def test_cdr3_length_preserves_raw_imgt_value_separately_from_translation(
+    raw_length, parsed_length
+):
+    files = full_files(productive="unproductive")
+    header, values = files["1_Summary.txt"].splitlines()
+    files["1_Summary.txt"] = (
+        header + "\tCDR3-IMGT length\n" + values + "\t" + raw_length
+    )
+
+    record = parse_imgt_full_result(files, candidate_batch()).records[0]
+
+    assert record.raw_cdr3_imgt_length == raw_length
+    assert record.cdr3_aa_length == 5
+    assert record.junction_aa_length == parsed_length
+
+
 @pytest.mark.parametrize('aa,trp,phe,gxg', [
     ({118: 'W', 119: 'G', 120: 'A', 121: 'G'}, 'påvist', 'ikke påvist', 'påvist'),
     ({118: 'F', 119: 'A', 120: 'G', 121: 'G'}, 'ikke påvist', 'påvist', 'ikke påvist'),

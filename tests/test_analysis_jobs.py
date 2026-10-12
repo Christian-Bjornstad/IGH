@@ -50,3 +50,24 @@ def test_partition_saves_do_not_replace_master_mapping(tmp_path):
     for part in analysis_jobs.partition_imgt_batch(batch):
         save_imgt_result(tmp_path, part, ImgtBatchResult({}, (), '', ''))
     assert {c['external_id'] for c in json.loads(mapping.read_text())['candidates']} == set(batch.candidate_ids)
+
+
+def test_arrest_88_sequences_preserves_success_when_second_group_fails():
+    batch = create_external_batch('2099_01_02', [(i, merged_row()) for i in range(88)])
+    sent = []
+
+    class Client:
+        def submit(self, part):
+            sent.append(part)
+            if len(sent) == 2:
+                raise ExternalAnalysisError('second group unavailable')
+            return object()
+
+    progress = []
+    result = analysis_jobs.run_analysis_job('ARResT', batch, Client(),
+                                             lambda done, total: progress.append((done, total)))
+    assert [len(part.candidates) for part in sent] == [50, 38]
+    assert tuple(c.external_id for part in sent for c in part.candidates) == batch.candidate_ids
+    assert len(result.parts) == 1
+    assert set(result.errors) == set(batch.candidate_ids[50:])
+    assert progress == [(1, 2), (2, 2)]

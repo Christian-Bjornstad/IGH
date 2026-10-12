@@ -97,7 +97,7 @@ def test_possible_near_match_is_not_annotated(run_factory, make_row):
     assert fr1_row.comment == ""
 
 
-def test_support_requires_one_functional_target_above_threshold(
+def test_support_includes_nonfunctional_high_leader(
     run_factory, make_row
 ):
     root, leader, fr1 = run_factory()
@@ -131,8 +131,96 @@ def test_support_requires_one_functional_target_above_threshold(
     result = MergeService().process(root, expected_samples=1)
     fr1_rows = [row for row in result.rows if row.target == "FR1"]
 
-    assert fr1_rows[0].comment == "(Supports Leader-1); (Supports Leader-2)"
-    assert fr1_rows[1].comment == ""
+    assert fr1_rows[0].comment == "Supports Leader-3"
+    assert fr1_rows[1].comment == "(Supports Leader-3)"
+
+
+@pytest.mark.parametrize(
+    ("leader_frame", "leader_stop", "fr1_frame", "fr1_stop"),
+    [("N", "Y", "Y", "Y"), ("Y", "N", "Y", "Y"),
+     ("Y", "Y", "N", "Y"), ("N", "N", "N", "N")],
+)
+def test_exact_support_does_not_require_functionality(
+    run_factory, make_row, leader_frame, leader_stop, fr1_frame, fr1_stop
+):
+    root, leader, fr1 = run_factory()
+    sequence = "ACGT" * 30
+    write_summary(leader, "SYN_A", 1, [make_row(
+        1, "TTTT" + sequence, percent=2.5,
+        in_frame=leader_frame, no_stop=leader_stop,
+    )])
+    write_summary(fr1, "SYN_A", 1, [make_row(
+        1, sequence, percent=2.5, in_frame=fr1_frame, no_stop=fr1_stop,
+    )])
+
+    result = MergeService().process(root, expected_samples=1)
+    support = next(row for row in result.rows if row.target == "FR1")
+
+    assert support.comment == "Supports Leader-1"
+
+
+def test_nonfunctional_support_preserves_functional_low_leader_grouping(
+    run_factory, make_row
+):
+    from igh_merge.candidates import functional_group_candidate_indices
+
+    root, leader, fr1 = run_factory()
+    sequence = "ACGT" * 30
+    write_summary(leader, "SYN_A", 1, [
+        make_row(1, "TTTT" + sequence, percent=1.0),
+        make_row(2, "CCCC" + sequence, percent=3.0, no_stop="N"),
+    ])
+    write_summary(fr1, "SYN_A", 1, [make_row(1, sequence, percent=3.0)])
+
+    result = MergeService().process(root, expected_samples=1)
+
+    assert functional_group_candidate_indices(result.rows) == frozenset({0})
+    assert result.rows[2].comment == "Supports Leader-2"
+
+
+def test_exact_support_helper_uses_same_sample_and_strongest_exact_leader(
+    run_factory, make_row
+):
+    from igh_merge.matching import exact_supporting_leaders
+
+    root, leader, fr1 = run_factory()
+    sequence = "ACGT" * 30
+    write_summary(leader, "SYN_A", 1, [
+        make_row(1, "TTTT" + sequence, percent=3.0, no_stop="N"),
+        make_row(2, "TTTT" + sequence, percent=4.0, no_stop="N"),
+        make_row(3, "CCCC" + sequence, percent=1.0),
+        make_row(4, "TTTT" + sequence[:-1] + "A", percent=5.0),
+    ])
+    write_summary(fr1, "SYN_A", 1, [make_row(1, sequence, percent=3.0)])
+    write_summary(leader, "SYN_B", 2, [make_row(1, sequence, percent=6.0)])
+    write_summary(fr1, "SYN_B", 2, [make_row(1, "C" * 30, percent=6.0)])
+    result = MergeService().process(root, expected_samples=2)
+    support = next(row for row in result.rows if row.sample == "SYN_A" and row.target == "FR1")
+
+    assert [row.source.rank for row in exact_supporting_leaders(support, result.rows)] == [2]
+    assert [row.source.rank for row in exact_supporting_leaders(
+        support, result.rows, functional_only=True
+    )] == [3]
+
+
+def test_exact_support_helper_requires_one_target_at_unrounded_threshold(
+    run_factory, make_row
+):
+    from igh_merge.matching import exact_supporting_leaders
+
+    root, leader, fr1 = run_factory()
+    sequence = "ACGT" * 30
+    write_summary(leader, "SYN_A", 1, [make_row(1, "TTTT" + sequence, percent=2.499)])
+    write_summary(fr1, "SYN_A", 1, [
+        make_row(1, sequence, percent=2.499),
+        make_row(2, sequence, percent=2.5),
+    ])
+    result = MergeService().process(root, expected_samples=1)
+
+    assert exact_supporting_leaders(result.rows[1], result.rows) == []
+    assert [row.source.rank for row in exact_supporting_leaders(
+        result.rows[2], result.rows
+    )] == [1]
 
 
 def test_detects_selected_leader_variants_without_grouping_low_noise(
