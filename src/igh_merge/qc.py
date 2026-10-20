@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .models import MergedRow, QcItem, QcReport
+from .models import CONTROL_SAMPLE_ORDER, MergedRow, QcItem, QcReport
 
 def _item(category: str, sample: str, target: str, ok: bool, message: str) -> QcItem:
     return QcItem(category, sample, target, "OK" if ok else "FEIL", message)
@@ -16,7 +16,7 @@ def evaluate_qc(rows: list[MergedRow]) -> QcReport:
         values.sort(key=lambda row: row.source.rank)
 
     controls: list[QcItem] = []
-    for control in ("IGH_POS", "IGH_SHM_POS", "NGS_NEG", "NK"):
+    for control in CONTROL_SAMPLE_ORDER:
         for target in ("Leader", "FR1"):
             group = groups.get((control, target))
             if not group:

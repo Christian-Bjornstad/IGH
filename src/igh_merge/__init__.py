@@ -1,4 +1,4 @@
-"""IGH Merge - lokal sammenslåing og QC av IGHV-SHM-data."""
+"""IGHV - Local merging and QC of IGHV-SHM data."""
 
 from .models import MergeResult, MergedRow, RunManifest
 from .service import MergeService

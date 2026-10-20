@@ -34,6 +34,7 @@ def candidate_batch(sequence: str = SEQUENCE) -> ExternalBatch:
         row_index=0,
         sample="SYN_LOCAL_ONLY",
         target="Leader",
+        molecule_type="gDNA",
         rank=1,
         sequence=sequence,
         sequence_sha256=sequence_sha256(sequence),
@@ -62,7 +63,7 @@ def merged_row(sequence: str = SEQUENCE) -> MergedRow:
         v_coverage=100.0,
         cdr3_sequence="CARDR",
     )
-    return MergedRow(source, "SYN_LOCAL_ONLY", 1, 100_000, "Leader", "2099_01_02")
+    return MergedRow(source, "SYN_LOCAL_ONLY", 1, 100_000, "Leader", "gDNA", "2099_01_02")
 
 
 def imgt_text(sequence: str = SEQUENCE) -> tuple[str, str]:
@@ -164,10 +165,9 @@ def test_batch_payload_contains_only_external_id_and_sequence():
     assert SEQUENCE in batch.fasta
 
 
-def test_batch_rejects_more_than_50_sequences():
-    row = merged_row()
-    with pytest.raises(ValueError, match="Maksimalt 50"):
-        create_external_batch("2099_01_02", [(index, row) for index in range(51)])
+def test_batch_accepts_more_than_50_for_partitioning():
+    batch = create_external_batch("2099_01_02", [(index, merged_row()) for index in range(51)])
+    assert len(batch.candidates) == 51
 
 
 def test_parse_imgt_result_and_verify_sequence():
@@ -283,8 +283,8 @@ def test_external_clients_explain_enterprise_tls_error(monkeypatch, client, serv
 
     message = str(caught.value)
     assert service in message
-    assert "Windows sitt sertifikatlager" in message
-    assert "INSTALLER PAKKER" in message
+    assert "Windows' certificate store" in message
+    assert "INSTALL PACKAGES" in message
     assert "Trusted Root Certification Authorities" in message
 
 
@@ -311,6 +311,14 @@ def test_arrest_client_posts_no_local_sample(monkeypatch):
     assert "SYN_LOCAL_ONLY" not in sent
     assert result.records[0].subset == "CLL#2"
     assert captured["result_url"] == "https://bat.infspire.org/results/public.tsv"
+
+
+def test_arrest_client_rejects_oversized_request_before_network(monkeypatch):
+    batch = create_external_batch('2099_01_02', [(i, merged_row()) for i in range(51)])
+    monkeypatch.setattr('igh_merge.external.requests.post',
+                        lambda *a, **k: pytest.fail('oversized batch reached network'))
+    with pytest.raises(ValueError, match='50'):
+        ArrestClient().submit(batch)
 
 
 def test_results_are_saved_locally_with_mapping(tmp_path):

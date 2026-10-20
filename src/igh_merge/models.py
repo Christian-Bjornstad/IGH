@@ -5,6 +5,31 @@ from pathlib import Path
 from typing import Literal
 
 Target = Literal["Leader", "FR1"]
+MoleculeType = Literal["gDNA", "cDNA"]
+
+CONTROL_SAMPLE_ORDER: tuple[str, ...] = (
+    "IGH_SHM_POS",
+    "IGH_POS",
+    "NGS_NEG",
+    "NK",
+)
+_CONTROL_PRIORITY = {sample: index for index, sample in enumerate(CONTROL_SAMPLE_ORDER)}
+
+
+def sample_sort_key(sample: str, sample_number: int) -> tuple[int, int, int]:
+    """Place controls first in the laboratory-defined order.
+
+    Patient samples retain their numeric input/run order after the controls.
+    """
+    priority = _CONTROL_PRIORITY.get(sample)
+    if priority is not None:
+        return (0, priority, sample_number)
+    return (1, sample_number, 0)
+
+
+def merged_row_sort_key(row: "MergedRow") -> tuple[int, int, int, int, int]:
+    sample_key = sample_sort_key(row.sample, row.sample_number)
+    return (*sample_key, 0 if row.target == "Leader" else 1, row.source.rank)
 
 
 @dataclass(frozen=True)
@@ -30,6 +55,7 @@ class SampleFile:
     sample: str
     sample_number: int
     target: Target
+    molecule_type: MoleculeType
     total_reads: int
     rows: tuple[SourceRow, ...]
 
@@ -58,14 +84,18 @@ class MergedRow:
     sample_number: int
     total_reads: int
     target: Target
+    molecule_type: MoleculeType
     run_date: str
+    external_id: str = ""
     other_samples: str = ""
     subset: str = ""
     comment: str = ""
+    external_sequence_sha256: str = ""
 
     @property
     def fasta(self) -> str:
-        return f">{self.sample}-{self.target}-{self.source.rank}\n{self.source.sequence}"
+        header = self.external_id or f"{self.sample}-{self.target}-{self.source.rank}"
+        return f">{header}\n{self.source.sequence}"
 
 
 @dataclass(frozen=True)

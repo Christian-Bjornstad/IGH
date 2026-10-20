@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from math import ceil
 
 from .models import MergedRow
@@ -9,7 +10,7 @@ CLONE_THRESHOLD = 2.5
 
 
 def annotate_exact_matches(rows: list[MergedRow]) -> None:
-    """Annoter kryssprøvetreff, relevant FR1-støtte og Leader-varianter."""
+    """Annotate cross-sample hits, relevant FR1 support, and Leader variants."""
     by_sequence: dict[str, list[MergedRow]] = defaultdict(list)
     by_sample: dict[str, list[MergedRow]] = defaultdict(list)
     for row in rows:
@@ -30,7 +31,7 @@ def annotate_exact_matches(rows: list[MergedRow]) -> None:
         leaders = [row for row in sample_rows if row.target == "Leader"]
         fr1_rows = [row for row in sample_rows if row.target == "FR1"]
         for fr1 in fr1_rows:
-            exact = _relevant_exact_leaders(fr1, leaders)
+            exact = exact_supporting_leaders(fr1, leaders)
             if exact:
                 confident: list[str] = []
                 tentative: list[str] = []
@@ -45,8 +46,8 @@ def annotate_exact_matches(rows: list[MergedRow]) -> None:
                         tentative.append(label)
                 comments: list[str] = []
                 if confident:
-                    comments.append("Støtter " + " og ".join(confident))
-                comments.extend(f"(Støtter {label})" for label in tentative)
+                    comments.append("Supports " + " and ".join(confident))
+                comments.extend(f"(Supports {label})" for label in tentative)
                 fr1.comment = "; ".join(comments)
 
         _annotate_leader_variants(leaders, fr1_rows)
@@ -92,18 +93,35 @@ def _annotate_leader_variants(
         if parent is None:
             group_leaders.append(candidate)
             continue
-        candidate.comment = f"Variant av Leader-{parent.source.rank}"
+        candidate.comment = f"Variant of Leader-{parent.source.rank}"
 
 
 def _relevant_exact_leaders(
-    fr1: MergedRow, leaders: list[MergedRow]
+    fr1: MergedRow, leaders: Sequence[MergedRow]
 ) -> list[MergedRow]:
-    if not _is_functional(fr1):
+    return exact_supporting_leaders(fr1, leaders, functional_only=True)
+
+
+def exact_supporting_leaders(
+    fr1: MergedRow,
+    rows: Sequence[MergedRow],
+    *,
+    functional_only: bool = False,
+) -> list[MergedRow]:
+    """Find exact same-sample Leader support without inferring functionality.
+
+    At least one target must have unrounded reads >=2.5%. Leaders above
+    that threshold take precedence; identical Leader sequences use their
+    strongest row. ``functional_only`` retains the preliminary Y/Y grouping.
+    """
+    if fr1.target != "FR1" or (functional_only and not _is_functional(fr1)):
         return []
     exact = [
         leader
-        for leader in leaders
-        if _is_functional(leader)
+        for leader in rows
+        if leader.target == "Leader"
+        and leader.sample == fr1.sample
+        and (not functional_only or _is_functional(leader))
         and (
             fr1.source.percent_total_reads >= CLONE_THRESHOLD
             or leader.source.percent_total_reads >= CLONE_THRESHOLD

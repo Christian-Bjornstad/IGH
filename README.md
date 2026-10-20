@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="src/igh_merge/assets/igh-merge-icon.png" alt="IGH Merge-ikon" width="112">
+  <img src="src/igh_merge/assets/igh-merge-icon.png" alt="IGHV-ikon" width="112">
 </p>
 
-<h1 align="center">IGH Merge</h1>
+<h1 align="center">IGHV</h1>
 
 <p align="center">
   <strong>Sikker og oversiktlig behandling av IGHV-SHM-resultater</strong><br>
-  Norsk PyQt6-applikasjon for merge, kjøringskontroller, IMGT/ARResT-analyse,
-  rapportutkast og kompatibel Excel-eksport.
+  PyQt6-applikasjon med engelsk grensesnitt for merge, kjøringskontroller,
+  IMGT/ARResT-analyse, rapportutkast og Excel-eksport.
 </p>
 
 <p align="center">
@@ -15,18 +15,17 @@
   <img alt="PyQt6" src="https://img.shields.io/badge/GUI-PyQt6-1E3A5F?logo=qt&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows11&logoColor=white">
   <img alt="Local first" src="https://img.shields.io/badge/Data-local--first-15803D">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-48%20passed-15803D">
 </p>
 
 ---
 
-![IGH Merge med syntetiske testdata](docs/assets/igh-merge-overview.png)
+![IGHV-grensesnitt med syntetiske testdata](docs/assets/ighv-workspace.png)
 
 > Skjermbildet bruker utelukkende konstruerte prøve-ID-er og sekvenser.
 
 ## Hva appen gjør
 
-IGH Merge samler den manuelle IGHV-SHM-arbeidsflyten i ett lokalt
+IGHV samler den manuelle IGHV-SHM-arbeidsflyten i ett lokalt
 desktopverktøy. GUI og kommandolinje bruker samme validerte prosesseringskjerne.
 
 | Område | Funksjonalitet |
@@ -35,9 +34,10 @@ desktopverktøy. GUI og kommandolinje bruker samme validerte prosesseringskjerne
 | **Kontroller** | Viser kontrollstatus separat for Leader og FR1 |
 | **Sekvenskobling** | Finner eksakt FR1-støtte, Leader-varianter og identiske sekvenser mellom prøver |
 | **IMGT** | Sender pseudonymisert FASTA og henter den komplette resultatpakken |
-| **ARResT** | Henter subset, confidence, score og SeqCure-status |
-| **Rapporter** | Lager lokalt rapportutkast og sporbare auditdata per prøve |
-| **Excel** | Eksporterer én kompatibel merged-fane med 22 kolonner og valgfri gulmarkering |
+| **ARResT** | Henter subset, confidence, score, SeqCure-meldinger og full advice |
+| **Rapporter** | Lager lokale Excel- og Word-utkast med sporbare auditdata per prøve |
+| **IMGT-dokumentasjon** | Lagrer skjermutsnitt fra Detailed view via Microsoft Edge under kjøringsmappen |
+| **Excel** | Eksporterer én merged-fane med 24 kolonner og valgfri gulmarkering |
 
 ## Arbeidsflyt
 
@@ -57,7 +57,7 @@ Valider Leader + FR1
 1. Velg kjøringsmappen.
 2. Valider oppdagede Leader- og FR1-filer.
 3. Kontroller kjøringens kontrollstatus.
-4. Velg de aktuelle Leader-kandidatene.
+4. Velg Leader og FR1. Alle med uavrundet reads ≥2,5 % foreslås, også ikke-produktive.
 5. Forhåndsvis nøyaktig FASTA-payload før eventuell ekstern sending.
 6. Kjør IMGT og/eller ARResT etter eksplisitt bekreftelse.
 7. Eksporter merged-arbeidsboken og eventuelle rapportutkast.
@@ -77,7 +77,7 @@ Prosjektet er bygget etter et **local-first**-prinsipp:
 Kliniske data skal ligge fysisk utenfor repoet, normalt i:
 
 ```text
-C:\Users\<bruker>\Documents\IGH-data
+C:\Users\<bruker>\Documents\IGHV-data
 ```
 
 > Sikkerhetsmekanismene i repoet supplerer, men erstatter ikke virksomhetens
@@ -105,31 +105,38 @@ python -m pip install -e ".[dev]"
 Appen kan også startes direkte fra prosjektmappen:
 
 ```powershell
-.\Start-IGH-Merge.ps1
+.\START_IGH_MERGE.cmd
 ```
 
 ### Python Felles / Ivanti
 
-På KDI-PC-er der `python.exe`, BAT-filer og vanlige snarveier blokkeres, åpnes
-**Python Felles** først. Kommandoene limes inn uten `>>>`.
+På administrerte PC-er der `python.exe`, BAT-filer og vanlige snarveier
+blokkeres, åpnes **Python Felles** via Ivanti PowerGate-snarveien
+(`pwrgate.exe 15694`) og kommandoene limes inn uten `>>>`.
 
 <details>
 <summary><strong>Vis installasjons- og startkommandoer</strong></summary>
 
-Installer pakker første gang og etter endringer i `requirements.txt`:
+Dobbeltklikk `INSTALL_IGH_MERGE.cmd` for å installere avhengighetene
+første gang og etter hver Python FELLES-oppgradering. Filen er en ren
+cmd-/PowerGate-bro som bruker Windows sitt innebygde `clip.exe` til å
+legge følgende kommando på utklippstavlen. Den bruker ikke PowerShell:
 
 ```python
-exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\install_python_felles_KDI.py", encoding="utf-8").read())
+import runpy; runpy.run_path(r'<prosjektmapp>\install_python_felles.py', run_name='igh_merge_install_felles')['main']()
 ```
 
-Start appen:
+Kontroller at CMD-vinduet viser mappen du nettopp lastet ned og
+`install_python_felles.py`. En lagret kommando til
+`install_python_felles_KDI.py` peker til en eldre utgave og installerer ikke
+alle avhengighetene denne appen bruker. Installasjonen viser aktiv
+Python-versjon og prosjektmappe før pip starter.
 
-```python
-exec(open(r"K:\Felles\KDI\Delte\PAT\Molekylaerpatologi\Molpat OCCI\Diagnostikk\Analyser,oppsett,kontroller\Hemapatologi\IGHV\CFB\IGH_app\start_python_felles_KDI.py", encoding="utf-8").read())
-```
+Dobbeltklikk `START_IGH_MERGE.cmd` for å starte appen (samme mønster,
+kjører `start_python_felles.py`).
 
-Pakkene installeres i `.python_felles_packages` i prosjektmappen. Det kreves
-ikke skrivetilgang til den sentrale Python-installasjonen. Se også
+Skriptene er generelle: de bruker `Path(__file__).parent` som prosjektrot
+og aldri hardkodede `K:`-stier. Detaljer og loggstier i
 [`PYTHON_FELLES_KOMMANDOER.txt`](PYTHON_FELLES_KOMMANDOER.txt).
 
 </details>
@@ -169,27 +176,58 @@ som standard.
 
 ## IMGT og ARResT
 
-- Maksimalt 50 sekvenser sendes per batch.
-- Kun valgte Leader-sekvenser inngår i payloaden.
+- Arbeidskøen deler utvalget i delanalyser med maksimalt 50 sekvenser. IMGT-delanalyser har én molekyltype.
+- ARResT beholder mottatte svar ved delvis feil. Ny innsending av samme utvalg sender bare sekvensene som mangler svar; fremdriften vises per gruppe. ARResT-klienten avviser forespørsler over 50 før nettverkssending.
+- Valgte Leader- og FR1-sekvenser inngår i payloaden. Reads ≥2,5 % vises i fet skrift, uavhengig av funksjonalitet.
+- Søk etter prøve/target og targetfilter endrer bare visningen; utvalgstelleren viser hele utvalget.
 - Gule kandidater har `In-frame=Y`, `No Stop codon=Y` og enten minst 2,5 %
   reads eller eksakt FR1-støtte på minst 2,5 %.
 - IMGT bruker human, IGH, D-gene alignment, V-region-indelsøk og subset-søk.
 - IMGT-resultatet lagres som komplett resultatpakke, inkludert parametere og
   program-/referanseversjon.
 - ARResT-resultatet lagres med subset, confidence, score og SeqCure-status.
+  Detaljrapportens meldinger og råd knyttes til hver eksterne ID. Manglende
+  detaljrapport markeres uten å forkaste subset-svaret. Rå HTML, kilde-URL,
+  hentetid og hash følger auditdataene.
 - Råresultater og auditdata lagres under `YYYY_MM_DD_external_results`.
 
 ### Rapportutkast
 
-Etter fullført IMGT kan **Lag rapportutkast** opprette én lokal PDF per prøve
-og `rapportdata.audit.json` under:
+Prøvens Excel-arbeidsbok har **Oversikt** til og med rad 8, én fane per
+selvstendig rearrangering og **Mal for Sanger** etter laboratoriets mal.
+Ufunksjonelle resultater merkes med **(Ufunksjonell)** i fanenavnet.
+Target fraction viser andelen reads i den aktuelle raden; FR1 support viser
+eksakt støtte i samme prøve, også når støtteandelen er under 2,5 %.
+IMGT-tabellen har detaljsidens lysegule bakgrunn og tekstfarger. Positive
+«påvist»-observasjoner er fete. IMGT-bilder beskjæres for visning i Excel;
+originale bildefiler og hashes bevares. ARResT/SeqCure-meldinger og råd
+vises som tekst, og lange råd fordeles over flere rader.
+
+FR1 med eksakt sekvensstøtte til en valgt Leader med uavrundet reads ≥2,5 %
+behandles som støtte i rapporten. Støttekoblingen undersøkes også for
+ufunksjonelle sekvenser. Analyseutvalget, merged-arket og auditdata beholder
+alle sekvensene. Audit oppgir separat dekning for IMGT, ARResT og bevis.
+**Settings → LymphoTrack version** er manuelt redigerbart, med 2.4.6 som
+startverdi. Et tomt felt vises som ikke oppgitt.
+Se [rapportarbeidsbøker](docs/report-review-workbooks.md).
+
+Etter fullført IMGT kan **Report draft** opprette lokale Excel- og
+Word-utkast og en Excel-arbeidsbok per prøve, tilhørende `analysis.xlsx`,
+validerte bevis og `report_data.audit.json` under:
 
 ```text
-YYYY_MM_DD_rapporter\<sesjon>
+YYYY_MM_DD_reports\<sesjon>
 ```
 
 Rapportdata inkluderer blant annet dybde, Leader/FR1-andel, V/D/J-alleler,
-VH-identitet, funksjonalitet, CDR3, indels og subset.
+VH-identitet med kilde og begge råverdier, funksjonalitet, CDR3, indels og separate subsetkilder. J-TRP/J-PHE og G-X-G er observasjoner til manuell vurdering. Nummererte FR4-IMGT-data brukes når tilgjengelig; ellers vises «ikke vurdert».
+
+**Capture IMGT evidence (Edge)** lagrer PNG-utsnitt separat under
+`YYYY_MM_DD_imgt_evidence\<sesjon>\<tidspunkt>\<ekstern-ID>`, med full kopierbar summary-tekst og manifest. **View IMGT evidence** viser tekst og bilder. Capture kan startes direkte etter validering, uten HTTP-analyse først. Rapportpakken inkluderer tilhørende bevis når de er hentet. ID, sekvenshash, sesjon og bildefilens hash valideres før bruk.
+
+ARResT bruker den verifiserte AssignSubsets-mottakeren på bat.infspire.org. Ingen uavhengig kompatibel reserve er verifisert. Timeout/5xx gir maksimalt to forsøk med samme payload. Format-, ID-, hash- og TLS-feil gjentas ikke.
+
+Samlet variantreanalyse er utsatt: B er Synthesis view, men brukerens ønskede «No»-valg er ikke entydig. Live Edge-crop og Word-paginering kunne ikke verifiseres i dette miljøet. Se [verifikasjon og begrensninger](docs/external-verification.md).
 
 ## Kommandolinje
 
@@ -241,8 +279,11 @@ IGH/
 ├── tools/                  # Sikkerhets- og golden-sammenligning
 ├── docs/                   # Kliniske regler og integrasjonsplaner
 ├── requirements.txt        # Låste Python Felles-avhengigheter
-├── install_python_felles_KDI.py
-└── start_python_felles_KDI.py
+├── INSTALL_IGH_MERGE.cmd            # Ivanti PowerGate-bro for installasjon
+├── INSTALL_IGH_MERGE_INSTALLER.cmd  # Alias-bro (gammelt navn peker hit)
+├── START_IGH_MERGE.cmd              # Ivanti PowerGate-bro for start
+├── install_python_felles.py         # Generell installasjonslauncher
+└── start_python_felles.py           # Generell start-launcher
 ```
 
 Mer dokumentasjon:
@@ -254,6 +295,6 @@ Mer dokumentasjon:
 ---
 
 <p align="center">
-  <strong>IGH Merge</strong><br>
+  <strong>IGHV</strong><br>
   Lokal, sporbar og menneskekontrollert IGHV-SHM-arbeidsflyt.
 </p>

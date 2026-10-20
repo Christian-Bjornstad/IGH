@@ -3,12 +3,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .models import MergedRow
+from .matching import exact_supporting_leaders
+
+
+def analysis_candidate_indices(rows: Sequence[MergedRow]) -> frozenset[int]:
+    """Analysis eligibility is independent of preliminary functionality."""
+    return frozenset(i for i, row in enumerate(rows)
+                     if row.target in {"Leader", "FR1"} and row.source.percent_total_reads >= 2.5)
 
 
 def is_functional_group_candidate(
     rows: Sequence[MergedRow], result_index: int
 ) -> bool:
-    """Returner om Leader-raden følger appens foreløpige gule utvalg."""
+    """Return whether the Leader row follows the app's preliminary yellow selection."""
     leader = rows[result_index]
     source = leader.source
     if (
@@ -20,14 +27,16 @@ def is_functional_group_candidate(
     if source.percent_total_reads >= 2.5:
         return True
 
-    label = f"Leader-{source.rank}"
     return any(
         row.sample == leader.sample
         and row.target == "FR1"
         and row.source.percent_total_reads >= 2.5
         and row.source.in_frame.strip().upper() == "Y"
         and row.source.no_stop_codon.strip().upper() == "Y"
-        and label in row.comment.replace("(", "").replace(")", "").split()
+        and any(
+            supported is leader
+            for supported in exact_supporting_leaders(row, rows, functional_only=True)
+        )
         for row in rows
     )
 
