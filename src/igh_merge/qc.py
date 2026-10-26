@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
+import math
 
 from .models import CONTROL_SAMPLE_ORDER, MergedRow, QcItem, QcReport
 
@@ -8,7 +10,24 @@ def _item(category: str, sample: str, target: str, ok: bool, message: str) -> Qc
     return QcItem(category, sample, target, "OK" if ok else "FEIL", message)
 
 
-def evaluate_qc(rows: list[MergedRow]) -> QcReport:
+@dataclass(frozen=True)
+class ControlLimits:
+    positive_min: float = 2.5
+    shm_min: float = 2.5
+    mutation_min: float = 2.0
+    negative_max: float = 1.0
+    ntc_reads_max: int = 10_000
+
+    def __post_init__(self):
+        for value in (self.positive_min, self.shm_min, self.mutation_min, self.negative_max):
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100:
+                raise ValueError('Control percentages must be between 0 and 100')
+        if type(self.ntc_reads_max) is not int or not 1 <= self.ntc_reads_max <= 2_000_000_000:
+            raise ValueError('NTC read limit must be a positive integer')
+
+
+def evaluate_qc(rows: list[MergedRow], limits: ControlLimits | None = None) -> QcReport:
+    limits = limits or ControlLimits()
     groups: dict[tuple[str, str], list[MergedRow]] = defaultdict(list)
     for row in rows:
         groups[(row.sample, row.target)].append(row)
@@ -30,10 +49,10 @@ def evaluate_qc(rows: list[MergedRow]) -> QcReport:
             reads = top.total_reads
             if control == "IGH_POS":
                 controls.append(
-                    _item("Kontroll", control, target, pct >= 2.5, f"Toppsekvens {pct:.2f} % (krav ≥2,5 %)")
+                    _item("Kontroll", control, target, pct >= limits.positive_min, f"Toppsekvens {pct:.2f} % (krav ≥{limits.positive_min:g} %)")
                 )
             elif control == "IGH_SHM_POS":
-                ok = pct >= 2.5 and mutation is not None and mutation >= 2.0
+                ok = pct >= limits.shm_min and mutation is not None and mutation >= limits.mutation_min
                 mutation_text = "mangler" if mutation is None else f"{mutation:.2f} %"
                 controls.append(
                     _item(
@@ -42,16 +61,16 @@ def evaluate_qc(rows: list[MergedRow]) -> QcReport:
                         target,
                         ok,
                         f"Toppsekvens {pct:.2f} %, mutasjonsrate {mutation_text} "
-                        "(krav ≥2,5 % og ≥2,0 %)",
+                        f"(krav ≥{limits.shm_min:g} % og ≥{limits.mutation_min:g} %)",
                     )
                 )
             elif control == "NGS_NEG":
                 controls.append(
-                    _item("Kontroll", control, target, pct < 1.0, f"Toppsekvens {pct:.2f} % (krav <1,0 %)")
+                    _item("Kontroll", control, target, pct < limits.negative_max, f"Toppsekvens {pct:.2f} % (krav <{limits.negative_max:g} %)")
                 )
             else:
                 controls.append(
-                    _item("Kontroll", control, target, reads < 10_000, f"{reads:,} reads (krav <10 000)")
+                    _item("Kontroll", control, target, reads < limits.ntc_reads_max, f"{reads:,} reads (krav <{limits.ntc_reads_max:,})")
                 )
 
     return QcReport(tuple(controls))

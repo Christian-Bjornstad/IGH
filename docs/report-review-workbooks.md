@@ -15,7 +15,7 @@ valgte lave Leader-rader fjernes ikke i skjul. Dette er presentasjonsgruppering,
 ikke klinisk klassifikasjon. Gul funksjonell GUI-gruppering følger Y/Y-reglene.
 
 `analysis.xlsx` beholder merged-formatet med 24 kolonner. Hver prøve får
-Word og `*_IGHV_analysis.xlsx` med Oversikt, rearrangeringsfaner og Mal for
+`*_IGHV_analysis.xlsx` med Oversikt, rearrangeringsfaner og Mal for
 Sanger. Oversikt slutter ved rad 8, og ingen celler er fryst. LVMS og de
 dupliserte vurderings-/summary-feltene er fjernet. Excel inneholder FASTA,
 analyseresultater og én IMGT-tabell med detaljsidens farger. Target fraction
@@ -71,3 +71,23 @@ ID/sekvenshash, bildehash, kildefil og nye felt kontrolleres ved regenerering.
 PDF opprettes ikke ved rapporteksport. Native Excel og Word brukes til
 visuell kontroll når Office er tilgjengelig; eventuelle begrensninger
 oppgis i testresultatet sammen med filene.
+
+## Revidert arbeidsflyt 26. oktober 2026
+
+Appen eksporterer bare Excel. Word fra Python-API-et krever eksplisitt
+`include_word=True`. Kandidatlisten viser ikke lenger subset og lange
+analysekommentarer, og den separate bildeviseren er fjernet fra appen.
+Bildene og detaljerte resultatfelter beholdes i Excel.
+
+Kontrollgrenser er redigerbare i Settings. Standardgrenser er uendret.
+Lagring beregner kontrollene på nytt; grensene følger med i portable
+`.ighv`-kjøringsfiler og i rapportaudit. Fast forventet prøveantall og
+standard datamappe er fjernet fra Settings. Run husker sist valgte mappe.
+
+Lagrede kjøringer inneholder fullstendige kilderader, analyseutvalg,
+resultater, versjon, kontrollgrenser og validerte PNG-er. Eksisterende
+analyseøkter kan også gjenopprettes fra mapping/rapportaudit sammen med
+originale TSV-filer eller merged-arbeidsboken. Binding mot prøve, target,
+rank, molekyltype og sekvenshash kontrolleres. Delvise analyser beholder
+sin faktiske dekning. IMGT og ARResT forsøker bare manglende resultater
+ved ny innsending av samme utvalg.

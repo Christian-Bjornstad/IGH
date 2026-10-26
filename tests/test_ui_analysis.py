@@ -43,7 +43,7 @@ def test_failed_validation_clears_previous_results(run_factory, make_row, monkey
     assert window.file_table.rowCount() > 0
     assert int(window.row_card.value.text()) > 0
 
-    def fail_validation(*_args):
+    def fail_validation(*_args, **_kwargs):
         raise ValidationError('Synthetic invalid folder')
 
     monkeypatch.setattr(window.service, 'process', fail_validation)
@@ -205,7 +205,8 @@ def test_refresh_keeps_reads_and_status_columns(run_factory, make_row):
     assert window.candidate_table.item(0, 6).text() == reads
     assert window.candidate_table.item(0, 7).text() == 'productive'
     assert window.candidate_table.item(0, 8).text() == 'unassigned'
-    assert window.candidate_table.item(0, 9).text() == '2'
+    assert window.candidate_table.columnCount() == 9
+    assert window.result.rows[0].subset == '2'
     assert all(
         window.candidate_table.item(0, column).background().color().name().upper() == '#FFFF00'
         for column in range(window.candidate_table.columnCount())

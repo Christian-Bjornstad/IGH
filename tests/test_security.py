@@ -24,6 +24,9 @@ def test_security_check_blocks_clinical_extensions_and_identifiers(tmp_path, mon
     errors = module.scan_paths([Path("clinical.xlsx"), Path("note.txt")])
     assert any("filtype" in error for error in errors)
     assert any("prøve-ID" in error for error in errors)
+    snapshot = tmp_path / 'saved.ighv'
+    snapshot.write_bytes(b'data')
+    assert module.scan_paths([snapshot])
 
 
 def test_security_check_blocks_long_dna_lines(tmp_path, monkeypatch):

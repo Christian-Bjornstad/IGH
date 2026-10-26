@@ -7,7 +7,7 @@ from .excel import ExcelReportWriter
 from .io import RunDiscovery
 from .matching import annotate_exact_matches
 from .models import MergeResult, MergedRow, merged_row_sort_key
-from .qc import evaluate_qc
+from .qc import ControlLimits, evaluate_qc
 
 
 class MergeService:
@@ -19,7 +19,8 @@ class MergeService:
         self.discovery = discovery or RunDiscovery()
         self.writer = writer or ExcelReportWriter()
 
-    def process(self, run_directory: Path, expected_samples: int = 24) -> MergeResult:
+    def process(self, run_directory: Path, expected_samples: int | None = 24,
+                *, limits: ControlLimits | None = None) -> MergeResult:
         manifest = self.discovery.discover(run_directory, expected_samples)
         rows = [
             MergedRow(
@@ -36,7 +37,7 @@ class MergeService:
         ]
         rows.sort(key=merged_row_sort_key)
         annotate_exact_matches(rows)
-        qc = evaluate_qc(rows)
+        qc = evaluate_qc(rows, limits)
         return MergeResult(manifest, tuple(rows), qc)
 
     def export(

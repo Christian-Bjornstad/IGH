@@ -35,7 +35,7 @@ desktopverktøy. GUI og kommandolinje bruker samme validerte prosesseringskjerne
 | **Sekvenskobling** | Finner eksakt FR1-støtte, Leader-varianter og identiske sekvenser mellom prøver |
 | **IMGT** | Sender pseudonymisert FASTA og henter den komplette resultatpakken |
 | **ARResT** | Henter subset, confidence, score, SeqCure-meldinger og full advice |
-| **Rapporter** | Lager lokale Excel- og Word-utkast med sporbare auditdata per prøve |
+| **Rapporter** | Lager lokale Excel-arbeidsbøker med sporbare auditdata per prøve |
 | **IMGT-dokumentasjon** | Lagrer skjermutsnitt fra Detailed view via Microsoft Edge under kjøringsmappen |
 | **Excel** | Eksporterer én merged-fane med 24 kolonner og valgfri gulmarkering |
 
@@ -211,8 +211,8 @@ alle sekvensene. Audit oppgir separat dekning for IMGT, ARResT og bevis.
 startverdi. Et tomt felt vises som ikke oppgitt.
 Se [rapportarbeidsbøker](docs/report-review-workbooks.md).
 
-Etter fullført IMGT kan **Report draft** opprette lokale Excel- og
-Word-utkast og en Excel-arbeidsbok per prøve, tilhørende `analysis.xlsx`,
+Etter fullført IMGT oppretter **Export sample Excel** en Excel-arbeidsbok
+per prøve, tilhørende `analysis.xlsx`,
 validerte bevis og `report_data.audit.json` under:
 
 ```text
@@ -222,12 +222,39 @@ YYYY_MM_DD_reports\<sesjon>
 Rapportdata inkluderer blant annet dybde, Leader/FR1-andel, V/D/J-alleler,
 VH-identitet med kilde og begge råverdier, funksjonalitet, CDR3, indels og separate subsetkilder. J-TRP/J-PHE og G-X-G er observasjoner til manuell vurdering. Nummererte FR4-IMGT-data brukes når tilgjengelig; ellers vises «ikke vurdert».
 
-**Capture IMGT evidence (Edge)** lagrer PNG-utsnitt separat under
-`YYYY_MM_DD_imgt_evidence\<sesjon>\<tidspunkt>\<ekstern-ID>`, med full kopierbar summary-tekst og manifest. **View IMGT evidence** viser tekst og bilder. Capture kan startes direkte etter validering, uten HTTP-analyse først. Rapportpakken inkluderer tilhørende bevis når de er hentet. ID, sekvenshash, sesjon og bildefilens hash valideres før bruk.
+**Get IMGT images** lagrer PNG-utsnitt separat under
+`YYYY_MM_DD_imgt_evidence\<sesjon>\<tidspunkt>\<ekstern-ID>`, med full kopierbar summary-tekst og manifest. Bildene vises i prøvearbeidsboken i Excel. Capture kan startes direkte etter validering, uten HTTP-analyse først. Rapportpakken inkluderer tilhørende bevis når de er hentet. ID, sekvenshash, sesjon og bildefilens hash valideres før bruk.
 
 ARResT bruker den verifiserte AssignSubsets-mottakeren på bat.infspire.org. Ingen uavhengig kompatibel reserve er verifisert. Timeout/5xx gir maksimalt to forsøk med samme payload. Format-, ID-, hash- og TLS-feil gjentas ikke.
 
-Samlet variantreanalyse er utsatt: B er Synthesis view, men brukerens ønskede «No»-valg er ikke entydig. Live Edge-crop og Word-paginering kunne ikke verifiseres i dette miljøet. Se [verifikasjon og begrensninger](docs/external-verification.md).
+### Åpne en tidligere kjøring
+
+**Run → Open saved run** åpner en `.ighv`-fil med kildedata, utvalg,
+IMGT/ARResT-resultater, LymphoTrack-versjon, kontrollgrenser og bilder.
+Filen kan flyttes uten de opprinnelige TSV-filene. Nye eksporter havner
+ved siden av kjøringsfilen. **Save run as** lager en kopi på valgt sted.
+Appen lagrer automatisk i kjøringsmappen etter innlesing, analyser og
+bildeinnhenting, og når vinduet lukkes.
+
+**Import previous analysis** leser en gammel kjøringsmappe med
+`mapping.audit.json` eller rapportaudit. Originale TSV-filer, eller
+`YYYY_MM_DD_merged.xlsx` / rapportpakkens `analysis.xlsx`, brukes til å
+verifisere prøve, target, rank, molekyltype og sekvenshash. Lagrede resultater
+og validerte bilder hentes uten nettinnsending. Dersom flere analyseøkter
+finnes, velges én eksplisitt. En enkelt Excel-fil uten audit og bilder kan
+ikke gjenopprette disse opplysningene.
+
+**Settings** inneholder bare LymphoTrack-versjon og redigerbare
+kontrollgrenser. Endrede grenser beregner kontrollstatus på nytt for den
+åpne kjøringen og lagres i kjøringsfilen og rapportens audit. Appen kontrollerer
+fortsatt at Leader og FR1 har samme prøver, men krever ikke et forhåndsvalgt
+prøveantall. Kommandolinjens valg for forventet antall er uendret.
+
+Kandidatlisten viser utvalg og analysestatus. Subset, IMGT-kommentarer,
+SeqCure-detaljer og bilder gjennomgås i Excel. Word og PDF opprettes ikke fra
+appen. Den eldre Word-eksporten er kun tilgjengelig som eksplisitt valg i
+Python-API-et for eksisterende integrasjoner.
+
 
 ## Kommandolinje
 

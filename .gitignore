@@ -45,6 +45,7 @@ output/
 
 # Local application settings and audit output
 *.audit.json
+*.ighv
 .igh-merge-settings.json
 
 # Local Hermes previews and dependency resolver output

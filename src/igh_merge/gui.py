@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from functools import partial
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
+import json
+import tempfile
+from uuid import uuid4
 
 from PyQt6.QtCore import QObject, QSettings, QTemporaryDir, QThread, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor, QIcon
@@ -13,6 +16,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -22,6 +26,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QInputDialog,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -67,9 +72,11 @@ from .models import MergeResult, QcItem
 from .privacy import PrivacyError, ensure_outside_git
 from .reports import generate_clinical_report_package
 from .analysis_jobs import AnalysisJobResult, run_analysis_job
-from .evidence_ui import EvidenceWorker, EvidenceDialog
+from .evidence_ui import EvidenceWorker
 from .evidence import EvidenceManifest
 from .service import MergeService
+from .qc import ControlLimits, evaluate_qc
+from .saved_runs import RunSession, save_session, load_session, restore_analysis
 
 
 from .theme import Palette
@@ -222,6 +229,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings("IGHV", "IGHV")
+        try:
+            self.control_limits = ControlLimits(**json.loads(self.settings.value('controlLimits', '{}')))
+        except (ValueError, TypeError):
+            self.control_limits = ControlLimits()
+        self._session_path = None
+        self._session_assets = tempfile.TemporaryDirectory(prefix='ighv-session-')
         self.service = MergeService()
         self.result: MergeResult | None = None
         self.external_batch: ExternalBatch | None = None
@@ -375,7 +388,7 @@ class MainWindow(QMainWindow):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
         self.run_edit = QLineEdit(
-            self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGHV-data"))
+            self.settings.value("lastRunDirectory", "")
         )
         self.run_edit.setClearButtonEnabled(True)
         self.run_edit.setAccessibleName("Run folder")
@@ -390,6 +403,19 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.validate_button, 0, 2)
         grid.setColumnStretch(0, 1)
         layout.addWidget(group)
+        saved_row = QHBoxLayout()
+        self.open_run_button = QPushButton('Open saved run')
+        self.open_run_button.clicked.connect(self._open_run)
+        self.import_run_button = QPushButton('Import previous analysis')
+        self.import_run_button.clicked.connect(self._import_run)
+        self.save_run_button = QPushButton('Save run as')
+        self.save_run_button.setEnabled(False)
+        self.save_run_button.clicked.connect(self._save_run_as)
+        saved_row.addWidget(self.open_run_button)
+        saved_row.addWidget(self.import_run_button)
+        saved_row.addStretch()
+        saved_row.addWidget(self.save_run_button)
+        layout.addLayout(saved_row)
 
         self.file_table = QTableWidget(0, 5)
         self.file_table.setHorizontalHeaderLabels(["S-no.", "Sample", "Leader rows", "FR1 rows", "Status"])
@@ -458,7 +484,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(filter_bar)
         self.candidate_search.textChanged.connect(self._filter_candidates)
         self.target_filter.currentTextChanged.connect(self._filter_candidates)
-        self.candidate_table = QTableWidget(0, 11)
+        self.candidate_table = QTableWidget(0, 9)
         self.candidate_table.itemChanged.connect(self._update_selection_count)
         self.candidate_table.setHorizontalHeaderLabels(
             [
@@ -471,17 +497,13 @@ class MainWindow(QMainWindow):
                 "% reads",
                 "IMGT",
                 "ARResT",
-                "Subset",
-                "Group / comment",
             ]
         )
         self._configure_table(self.candidate_table)
         candidate_header = self.candidate_table.horizontalHeader()
         candidate_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         candidate_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        candidate_header.setSectionResizeMode(10, QHeaderView.ResizeMode.Interactive)
         self.candidate_table.setColumnWidth(3, 164)
-        self.candidate_table.setColumnWidth(10, 220)
         candidate_header.setMinimumSectionSize(54)
         candidate_header.setStretchLastSection(True)
         self.candidate_table.setSelectionBehavior(
@@ -498,7 +520,7 @@ class MainWindow(QMainWindow):
         # Separate sequence submission from the evidence and report workflow.
         action_groups = QHBoxLayout()
         action_groups.setSpacing(12)
-        analysis_group = QGroupBox("Analysis")
+        analysis_group = QGroupBox("1 · Analyze sequences")
         analysis_grid = QGridLayout(analysis_group)
         analysis_grid.setSpacing(8)
         self.preview_fasta_button = QPushButton("Preview FASTA")
@@ -507,42 +529,39 @@ class MainWindow(QMainWindow):
         self.save_fasta_button = QPushButton("Save FASTA locally")
         self.save_fasta_button.setEnabled(False)
         self.save_fasta_button.clicked.connect(self._export_fasta)
-        self.send_imgt_button = QPushButton("Send to IMGT")
+        self.send_imgt_button = QPushButton("Analyze with IMGT")
         self.send_imgt_button.setObjectName("PrimaryButton")
         self.send_imgt_button.setEnabled(False)
         self.send_imgt_button.clicked.connect(self._send_imgt)
-        self.send_arrest_button = QPushButton("Send to ARResT")
+        self.send_arrest_button = QPushButton("Analyze with ARResT")
+        self.send_arrest_button.setObjectName("PrimaryButton")
         self.send_arrest_button.setEnabled(False)
         self.send_arrest_button.clicked.connect(self._send_arrest)
-        self.capture_button = QPushButton("Capture IMGT evidence (Edge)")
+        self.capture_button = QPushButton("Get IMGT images")
         self.capture_button.setToolTip(
             "Open Microsoft Edge with the IGHV profile and capture IMGT result-page "
             "screenshots (sections 1-6 and 9) for the selected sequences."
         )
         self.capture_button.setEnabled(False)
         self.capture_button.clicked.connect(self._capture_imgt_evidence)
-        self.view_evidence_button = QPushButton('View evidence')
-        self.view_evidence_button.setAccessibleName("View IMGT evidence")
-        self.view_evidence_button.setEnabled(False)
-        self.view_evidence_button.clicked.connect(self._view_evidence)
         self.evidence_manifest = None
-        self.report_button = QPushButton("Report draft")
-        self.report_button.setAccessibleName("Generate report draft")
-        self.report_button.setToolTip("Generate Word and Excel reports per sample.")
+        self.report_button = QPushButton("Export sample Excel")
+        self.report_button.setObjectName("PrimaryButton")
+        self.report_button.setAccessibleName("Export sample Excel workbooks")
+        self.report_button.setToolTip("Create one Excel workbook per sample with analysis and available IMGT images.")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
-        analysis_grid.addWidget(self.preview_fasta_button, 0, 0)
-        analysis_grid.addWidget(self.save_fasta_button, 0, 1)
-        analysis_grid.addWidget(self.send_imgt_button, 1, 0)
-        analysis_grid.addWidget(self.send_arrest_button, 1, 1)
+        analysis_grid.addWidget(self.send_imgt_button, 0, 0)
+        analysis_grid.addWidget(self.send_arrest_button, 0, 1)
+        analysis_grid.addWidget(self.preview_fasta_button, 1, 0)
+        analysis_grid.addWidget(self.save_fasta_button, 1, 1)
         analysis_grid.setColumnStretch(0, 1)
         analysis_grid.setColumnStretch(1, 1)
-        documentation_group = QGroupBox("Reports and images")
+        documentation_group = QGroupBox("2 · Images and Excel")
         documentation_grid = QGridLayout(documentation_group)
         documentation_grid.setSpacing(8)
         documentation_grid.addWidget(self.capture_button, 0, 0, 1, 2)
-        documentation_grid.addWidget(self.view_evidence_button, 1, 0)
-        documentation_grid.addWidget(self.report_button, 1, 1)
+        documentation_grid.addWidget(self.report_button, 1, 0, 1, 2)
         documentation_grid.setColumnStretch(0, 1)
         documentation_grid.setColumnStretch(1, 1)
         action_groups.addWidget(analysis_group, 1)
@@ -612,45 +631,39 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        group = QGroupBox("Defaults")
+        group = QGroupBox("LymphoTrack")
         form = QFormLayout(group)
-        self.default_data_edit = QLineEdit(
-            self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGHV-data"))
-        )
-        self.default_data_edit.setClearButtonEnabled(True)
-        self.default_data_edit.setAccessibleName("Default data folder")
-        self.expected_spin = QSpinBox()
-        self.expected_spin.setRange(1, 96)
-        self.expected_spin.setValue(int(self.settings.value("expectedSamples", 24)))
-        self.expected_spin.setAccessibleName("Expected samples per target")
         self.lymphotrack_version_edit = QLineEdit(self.settings.value("lymphotrackVersion", "2.4.6"))
         self.lymphotrack_version_edit.setAccessibleName("LymphoTrack version")
-        self.lymphotrack_version_edit.setPlaceholderText("e.g. 2.4.6")
-        self.lymphotrack_version_edit.setToolTip(
-            "LymphoTrack version used for this run."
-        )
+        form.addRow("Version", self.lymphotrack_version_edit)
+        layout.addWidget(group)
+        rules = QGroupBox("Control limits")
+        rules_form = QFormLayout(rules)
+        self.limit_inputs = {}
+        for key, label in (
+            ('positive_min', 'IGH_POS · minimum reads %'),
+            ('shm_min', 'IGH_SHM_POS · minimum reads %'),
+            ('mutation_min', 'IGH_SHM_POS · minimum mutation %'),
+            ('negative_max', 'NGS_NEG · reads % below'),
+            ('ntc_reads_max', 'NK / NTC · total reads below'),
+        ):
+            editor = QSpinBox() if key == 'ntc_reads_max' else QDoubleSpinBox()
+            editor.setRange(1 if key == 'ntc_reads_max' else 0, 2_000_000_000 if key == 'ntc_reads_max' else 100)
+            if key != 'ntc_reads_max':
+                editor.setDecimals(2)
+                editor.setSuffix(' %')
+            editor.setValue(getattr(self.control_limits, key))
+            editor.setAccessibleName(label)
+            self.limit_inputs[key] = editor
+            rules_form.addRow(label, editor)
+        layout.addWidget(rules)
         save = QPushButton("Save settings")
         save.setObjectName("PrimaryButton")
-        save.setMinimumWidth(210)
         save.clicked.connect(self._save_settings)
         save_row = QHBoxLayout()
         save_row.addStretch()
         save_row.addWidget(save)
-        form.addRow("Default data folder", self.default_data_edit)
-        form.addRow("Expected samples per target", self.expected_spin)
-        form.addRow("LymphoTrack version", self.lymphotrack_version_edit)
-        form.addRow("", save_row)
-        layout.addWidget(group)
-
-        rules = QGroupBox("Control limits (write-protected)")
-        rules_layout = QVBoxLayout(rules)
-        rules_text = QLabel(
-                "IGH-PK ≥2.5 % | IGH-SHM ≥2.5 % and mutation ≥2.0 % | "
-                "NGS NEG <1.0 % | NTC <10 000 reads"
-        )
-        rules_text.setWordWrap(True)
-        rules_layout.addWidget(rules_text)
-        layout.addWidget(rules)
+        layout.addLayout(save_row)
         layout.addStretch()
         return page
 
@@ -693,12 +706,131 @@ class MainWindow(QMainWindow):
         if path:
             self.output_edit.setText(path if path.lower().endswith(".xlsx") else f"{path}.xlsx")
 
+    def _snapshot(self) -> RunSession:
+        return RunSession(self.result, self.external_batch, self.imgt_result, self.arrest_result,
+                          self.evidence_manifest, self._selected_result_indices(),
+                          self.lymphotrack_version_edit.text().strip(), self.control_limits)
+
+    def _autosave(self) -> None:
+        if not self.result:
+            return
+        path = self._session_path
+        if path is None:
+            path = self.result.manifest.run_directory / f'{self.result.manifest.run_date}_saved_run.ighv'
+            if path.exists():
+                path = path.with_stem(f'{path.stem}_{uuid4().hex[:8]}')
+        try:
+            self._session_path = save_session(path, self._snapshot())
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, 'Run could not be saved', str(exc))
+
+    def _save_run_as(self) -> None:
+        if not self.result:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, 'Save run', str(self._session_path or
+            self.result.manifest.run_directory / f'{self.result.manifest.run_date}_saved_run.ighv'),
+            'IGHV run (*.ighv)')
+        if path:
+            try:
+                self._session_path = save_session(Path(path).with_suffix('.ighv'), self._snapshot())
+                self._set_status('Run saved', 'success')
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, 'Run could not be saved', str(exc))
+
+    def _can_open_run(self) -> bool:
+        if self._external_thread and self._external_thread.isRunning():
+            QMessageBox.information(self, 'Analysis in progress', 'Wait for the analysis to finish.')
+            return False
+        return True
+
+    def _open_run(self) -> None:
+        if not self._can_open_run():
+            return
+        path, _ = QFileDialog.getOpenFileName(self, 'Open saved run', self.run_edit.text(),
+                                             'IGHV run (*.ighv)')
+        if not path:
+            return
+        try:
+            cache = Path(self._session_assets.name) / uuid4().hex
+            state = load_session(Path(path), cache)
+            self._restore_session(state, Path(path))
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, 'Cannot open run', str(exc))
+
+    def _import_run(self) -> None:
+        if not self._can_open_run():
+            return
+        directory = QFileDialog.getExistingDirectory(self, 'Choose previous run folder', self.run_edit.text())
+        if not directory:
+            return
+        root = Path(directory)
+        mappings = sorted(root.glob('*_external_results/*/mapping.audit.json'),
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+        if not mappings:
+            mappings = sorted(root.glob('*_reports/**/report_data.audit.json'),
+                              key=lambda p: p.stat().st_mtime, reverse=True)
+        if not mappings:
+            QMessageBox.warning(self, 'No saved analysis', 'No saved analysis was found in this run folder.')
+            return
+        path = mappings[0]
+        if len(mappings) > 1:
+            labels = [str(p.relative_to(root)) for p in mappings]
+            label, accepted = QInputDialog.getItem(self, 'Choose analysis', 'Analysis', labels, 0, False)
+            if not accepted:
+                return
+            path = mappings[labels.index(label)]
+        try:
+            state = restore_analysis(path, self.control_limits)
+            self._restore_session(state)
+            self._autosave()
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            QMessageBox.critical(self, 'Cannot import analysis', str(exc))
+
+    def _restore_session(self, state: RunSession, path: Path | None = None) -> None:
+        self._autosave()
+        self.result, self.external_batch = state.result, state.batch
+        self.imgt_result, self.arrest_result = state.imgt, state.arrest
+        self.evidence_manifest = state.evidence
+        self._session_path = path
+        self.control_limits = state.limits
+        for key, editor in self.limit_inputs.items():
+            editor.setValue(getattr(state.limits, key))
+        self.lymphotrack_version_edit.setText(state.lymphotrack_version)
+        self._imgt_status_by_row.clear()
+        self._arrest_status_by_row.clear()
+        if state.batch:
+            for record in state.imgt.records if state.imgt else ():
+                self._imgt_status_by_row[state.batch.by_id()[record.external_id].row_index] = 'Completed'
+            for record in state.arrest.records if state.arrest else ():
+                self._arrest_status_by_row[state.batch.by_id()[record.external_id].row_index] = 'Completed'
+        self._populate_result()
+        for row in range(self.candidate_table.rowCount()):
+            item = self.candidate_table.item(row, 0)
+            index = item.data(Qt.ItemDataRole.UserRole)
+            item.setCheckState(Qt.CheckState.Checked if index in state.selected else Qt.CheckState.Unchecked)
+        self._refresh_external_table()
+        self.run_edit.setText(str(state.result.manifest.run_directory))
+        self.output_edit.setText(str(state.result.manifest.run_directory / f'{state.result.manifest.run_date}_merged.xlsx'))
+        self.export_button.setEnabled(True)
+        self.send_imgt_button.setEnabled(True)
+        self.send_arrest_button.setEnabled(True)
+        self.save_run_button.setEnabled(True)
+        self.report_button.setEnabled(self._has_complete_imgt())
+        self.run_message.setText(f'{state.result.manifest.run_date} · saved run opened')
+        self.external_status.setText(f'IMGT: {len(state.imgt.records) if state.imgt else 0} · '
+                                     f'ARResT: {len(state.arrest.records) if state.arrest else 0} · '
+                                     f'Images: {sum(len(e.images) for e in state.evidence.entries) if state.evidence else 0}')
+        self._set_status('Run opened', 'success')
+        self._switch_page(2 if state.batch else 0)
+
     def _validate(self) -> None:
         if self._external_thread and self._external_thread.isRunning():
             QMessageBox.information(
                 self, "Analysis in progress", "Wait for the ongoing analysis to finish."
             )
             return
+        self._autosave()
+        self._session_path = None
         self._set_status("Validating …", "busy")
         self.validate_button.setEnabled(False)
         self.validate_button.setText("Validating …")
@@ -710,10 +842,9 @@ class MainWindow(QMainWindow):
         self._arrest_status_by_row.clear()
         self.capture_button.setEnabled(False)
         self.report_button.setEnabled(False)
-        self.view_evidence_button.setEnabled(False)
         self.evidence_manifest = None
         try:
-            self.result = self.service.process(Path(self.run_edit.text()), self.expected_spin.value())
+            self.result = self.service.process(Path(self.run_edit.text()), None, limits=self.control_limits)
         except (ValidationError, OSError) as exc:
             self.result = None
             self._clear_result_views()
@@ -738,7 +869,10 @@ class MainWindow(QMainWindow):
         if self.result.manifest.warnings:
             self.run_message.setText("\n".join(self.result.manifest.warnings))
         else:
-            self.run_message.setText("Run is structurally validated and ready for export.")
+            self.run_message.setText(f'{len(self.result.manifest.leader_files)} samples loaded')
+        self.save_run_button.setEnabled(True)
+        self.settings.setValue('lastRunDirectory', str(self.result.manifest.run_directory))
+        self._autosave()
 
     def _clear_result_views(self) -> None:
         """Discard visual results when the newly requested run cannot be validated."""
@@ -750,6 +884,7 @@ class MainWindow(QMainWindow):
         self.external_status.setText("No validated run is loaded. Validate a run before analysis.")
         self.run_message.setText("Validation failed. Check the folder and validate the run again.")
         self.export_readiness.setText("Validate a run on the Run page before exporting.")
+        self.save_run_button.setEnabled(False)
         for button in (self.select_candidates_button, self.preview_fasta_button, self.save_fasta_button):
             button.setEnabled(False)
 
@@ -822,8 +957,6 @@ class MainWindow(QMainWindow):
                 item.source.percent_total_reads,
                 self._imgt_status_by_row.get(result_index, ""),
                 self._arrest_status_by_row.get(result_index, ""),
-                item.subset,
-                item.comment,
             ]
             for column, value in enumerate(values, start=1):
                 self.candidate_table.setItem(row, column, QTableWidgetItem(str(value)))
@@ -927,7 +1060,6 @@ class MainWindow(QMainWindow):
         self.arrest_result = None
         self.report_button.setEnabled(False)
         self.capture_button.setEnabled(bool(self.result))
-        self.view_evidence_button.setEnabled(False)
         self.evidence_manifest = None
         self._imgt_status_by_row.clear()
         self._arrest_status_by_row.clear()
@@ -969,14 +1101,15 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, "Cannot send", str(exc))
             return
-        if service == 'ARResT' and self.arrest_result:
-            completed = {record.external_id for record in self.arrest_result.records}
+        previous = self.imgt_result if service == 'IMGT' else self.arrest_result
+        if previous:
+            completed = {record.external_id for record in previous.records}
             batch = replace(batch, candidates=tuple(
                 candidate for candidate in batch.candidates if candidate.external_id not in completed
             ))
             if not batch.candidates:
-                QMessageBox.information(self, 'ARResT complete',
-                                        'All selected sequences already have an ARResT result.')
+                QMessageBox.information(self, f'{service} complete',
+                                        f'All selected sequences already have a {service} result.')
                 return
         dialog = PayloadDialog(service, endpoint, batch.fasta, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -1040,6 +1173,7 @@ class MainWindow(QMainWindow):
             return
         if isinstance(result, AnalysisJobResult):
             previous_arrest = self.arrest_result
+            previous_imgt = self.imgt_result
             accepted = []
             errors = dict(result.errors)
             for part, part_result in result.parts:
@@ -1051,11 +1185,15 @@ class MainWindow(QMainWindow):
             for external_id, error in errors.items():
                 statuses[batch.by_id()[external_id].row_index] = f"Failed: {error}"
             if service == "IMGT":
-                records = tuple(record for _, part in accepted for record in part.records)
-                first = accepted[0][1] if accepted else None
+                selected_ids = set((self.external_batch or batch).candidate_ids)
+                merged_records = {record.external_id: record for record in previous_imgt.records
+                                  if record.external_id in selected_ids} if previous_imgt else {}
+                merged_records.update({record.external_id: record for _, part in accepted for record in part.records})
+                records = tuple(merged_records.values())
+                first = accepted[0][1] if accepted else previous_imgt
                 self.imgt_result = ImgtBatchResult(first.parameters, records, '', '') if first else None
                 self.capture_button.setEnabled(bool(records))
-                self.report_button.setEnabled(not errors and bool(records))
+                self.report_button.setEnabled(self._has_complete_imgt())
             else:
                 selected_ids = set((self.external_batch or batch).candidate_ids)
                 merged_records = {record.external_id: record for record in previous_arrest.records
@@ -1069,6 +1207,7 @@ class MainWindow(QMainWindow):
             self.external_status.setText(f"{service}: {len(records)} completed, {len(errors)} failed")
             self._set_status(f"{service} partial failure" if errors else f"{service} completed",
                              "error" if errors else "success")
+            self._autosave()
             return not errors
         try:
             if service == "IMGT":
@@ -1123,6 +1262,7 @@ class MainWindow(QMainWindow):
         self._refresh_external_table()
         self.external_status.setText(message)
         self._set_status(f"{service} completed", "success")
+        self._autosave()
         return True
 
     def _has_complete_imgt(self) -> bool:
@@ -1142,6 +1282,7 @@ class MainWindow(QMainWindow):
                 self.arrest_result,
                 evidence=self.evidence_manifest,
                 lymphotrack_version=self.lymphotrack_version_edit.text().strip(),
+                control_limits=asdict(self.control_limits),
             )
         except (OSError, PrivacyError, ValueError) as exc:
             QMessageBox.critical(self, "Report failed", str(exc))
@@ -1149,7 +1290,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "Reports created",
-            f"Report drafts and audit data saved in:\n{directory}",
+            f"Excel workbooks saved in:\n{directory}",
         )
 
     def _external_failed(self, service: str, message: str) -> None:
@@ -1218,17 +1359,13 @@ class MainWindow(QMainWindow):
     def _evidence_succeeded(self, result) -> None:
         manifest, errors = result
         self.evidence_manifest = manifest
-        self.view_evidence_button.setEnabled(bool(manifest.entries))
         self.report_button.setEnabled(bool(self.imgt_result and self.external_batch and
             set(r.external_id for r in self.imgt_result.records) == set(self.external_batch.candidate_ids)))
         self.external_status.setText(f'IMGT evidence: {len(manifest.entries)} captured; {len(errors)} failed. '
                                      + '; '.join(f'{key}: {value}' for key, value in errors.items()))
         self._set_status('IMGT evidence partial failure' if errors else 'IMGT evidence captured',
                          'error' if errors else 'success')
-
-    def _view_evidence(self) -> None:
-        if self.evidence_manifest and self.evidence_manifest.entries:
-            EvidenceDialog(self.evidence_manifest, self).exec()
+        self._autosave()
 
     def _molecule_for(self, external_id: str) -> str:
         if not self.external_batch:
@@ -1257,14 +1394,9 @@ class MainWindow(QMainWindow):
                 1: external_ids.get(result_index, ""),
                 7: self._imgt_status_by_row.get(result_index, ""),
                 8: self._arrest_status_by_row.get(result_index, ""),
-                9: self.result.rows[result_index].subset,
-                10: self.result.rows[result_index].comment,
             }
             for column, value in values.items():
                 self.candidate_table.item(table_row, column).setText(value)
-            comment_cell = self.candidate_table.item(table_row, 10)
-            comment_cell.setForeground(QColor(Palette.error if 'IGHJ5*03: pseudogene' in comment_cell.text() else Palette.ink))
-            comment_cell.setToolTip(comment_cell.text())
 
     def _export_excel(self) -> None:
         if not self.result:
@@ -1345,13 +1477,18 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         super().closeEvent(event)
+        self._autosave()
 
     def _save_settings(self) -> None:
-        self.settings.setValue("defaultDataDirectory", self.default_data_edit.text())
-        self.settings.setValue("expectedSamples", self.expected_spin.value())
+        self.control_limits = ControlLimits(**{key: editor.value() for key, editor in self.limit_inputs.items()})
+        self.settings.setValue('controlLimits', json.dumps(asdict(self.control_limits)))
         self.settings.setValue("lymphotrackVersion", self.lymphotrack_version_edit.text().strip())
-        self.run_edit.setText(self.default_data_edit.text())
-        QMessageBox.information(self, "Settings", "Local settings saved.")
+        if self.result:
+            self.result = replace(self.result, qc=evaluate_qc(list(self.result.rows), self.control_limits))
+            self._fill_control_table(self.result.qc.controls)
+            self.control_card.value.setText(str(self.result.qc.error_count))
+            self._autosave()
+        QMessageBox.information(self, "Settings", "Settings saved.")
 
     def _style(self) -> None:
         # Qt stylesheets replace the platform arrow renderer. Keep small vector
@@ -1418,25 +1555,25 @@ class MainWindow(QMainWindow):
                 border-radius: 6px; margin-top: 10px; padding: 12px 10px 10px; font-weight: 600;
             }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; background: {Palette.app_bg}; }}
-            QLineEdit, QSpinBox, QPlainTextEdit, QComboBox {{
+            QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QComboBox {{
                 background: {Palette.panel}; color: {Palette.ink}; border: 1px solid {Palette.border_strong};
                 border-radius: 4px; padding: 6px 8px; min-height: 20px;
                 selection-background-color: {Palette.accent}; selection-color: white;
             }}
-            QLineEdit:hover, QSpinBox:hover, QPlainTextEdit:hover, QComboBox:hover {{ border-color: {Palette.accent}; }}
-            QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus {{
+            QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QPlainTextEdit:hover, QComboBox:hover {{ border-color: {Palette.accent}; }}
+            QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus {{
                 border: 2px solid {Palette.accent}; padding: 5px 7px;
             }}
             QComboBox {{ padding-right: 24px; }}
             QComboBox:focus {{ padding-right: 23px; }}
             QComboBox::drop-down {{ width: 22px; border: 0; }}
             QComboBox::down-arrow {{ image: url("{down_arrow}"); width: 10px; height: 6px; }}
-            QSpinBox {{ padding-right: 24px; }}
-            QSpinBox:focus {{ padding-right: 23px; }}
-            QSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 20px; border: 0; }}
-            QSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border: 0; }}
-            QSpinBox::up-arrow {{ image: url("{up_arrow}"); width: 10px; height: 6px; }}
-            QSpinBox::down-arrow {{ image: url("{down_arrow}"); width: 10px; height: 6px; }}
+            QSpinBox, QDoubleSpinBox {{ padding-right: 24px; }}
+            QSpinBox:focus, QDoubleSpinBox:focus {{ padding-right: 23px; }}
+            QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 20px; border: 0; }}
+            QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border: 0; }}
+            QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url("{up_arrow}"); width: 10px; height: 6px; }}
+            QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url("{down_arrow}"); width: 10px; height: 6px; }}
             QComboBox QAbstractItemView {{
                 background: {Palette.panel}; color: {Palette.ink}; border: 1px solid {Palette.border_strong};
                 selection-background-color: {Palette.accent_soft}; selection-color: {Palette.ink};
@@ -1452,7 +1589,7 @@ class MainWindow(QMainWindow):
             QPushButton#PrimaryButton:hover, QPushButton#PrimaryButton:pressed {{ background: {Palette.accent_hover}; color: white; }}
             QPushButton#PrimaryButton:focus {{ border-color: {Palette.ink}; }}
             QPushButton:disabled {{ color: {Palette.disabled_text}; background: {Palette.disabled_bg}; border-color: {Palette.border}; }}
-            QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {{ color: {Palette.disabled_text}; background: {Palette.disabled_bg}; }}
+            QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{ color: {Palette.disabled_text}; background: {Palette.disabled_bg}; }}
             QCheckBox {{ color: {Palette.ink}; spacing: 8px; padding: 4px; border: 2px solid transparent; }}
             QCheckBox:focus {{ border-color: {Palette.accent}; border-radius: 4px; }}
             QCheckBox::indicator {{ width: 18px; height: 18px; }}

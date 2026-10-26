@@ -171,16 +171,12 @@ def test_package_excel_and_unique_sample_names(tmp_path):
     rows[0].sample, rows[1].sample = 'SYN/A', 'SYN?A'
     batch = create_external_batch('2099_01_02', list(enumerate(rows)))
     directory = generate_clinical_report_package(tmp_path, rows, batch, results(batch), evidence=EvidenceManifest(()))
-    assert len(list(directory.glob('*.docx'))) == 2
+    assert not list(directory.glob('*.docx'))
     assert not list(directory.glob('*.pdf'))
     assert len(list(directory.glob('*_IGHV_analysis.xlsx'))) == 2
     workbook = load_workbook(directory / 'analysis.xlsx')
     assert workbook.active.max_column == 24
     assert {workbook.active.cell(i, 1).value for i in (2, 3)} == set(batch.candidate_ids)
-    with zipfile.ZipFile(next(directory.glob('*.docx'))) as z:
-        text = z.read('word/document.xml').decode()
-        assert 'manual assessment' in text
-        assert 'IMGT evidence missing' in text
     again = generate_clinical_report_package(tmp_path, rows, batch, results(batch))
     assert again != directory
 
