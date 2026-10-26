@@ -83,7 +83,7 @@ def application_icon() -> QIcon:
 
 
 class MetricCard(QFrame):
-    def __init__(self, label: str, description: str, color: str):
+    def __init__(self, label: str, color: str):
         super().__init__()
         self.setObjectName("MetricCard")
         layout = QHBoxLayout(self)
@@ -99,10 +99,7 @@ class MetricCard(QFrame):
         self.value.setObjectName("MetricValue")
         self.value.setStyleSheet(f"color: {color}")
         self.value.setAccessibleName(label)
-        caption = QLabel(description)
-        caption.setObjectName("MetricDescription")
         text_layout.addWidget(eyebrow)
-        text_layout.addWidget(caption)
         layout.addLayout(text_layout, 1)
         layout.addWidget(self.value)
 
@@ -150,7 +147,7 @@ class TableSection(QFrame):
             f"{total} {self.noun}" if visible == total else f"{visible} of {total} {self.noun} shown"
         )
         self.empty.setText(
-            "No candidates match these filters.\nClear the search or choose All targets to show the run."
+            "No candidates match these filters."
             if total and not visible else self.empty_message
         )
         self.stack.setCurrentWidget(self.table if visible else self.empty)
@@ -162,10 +159,7 @@ class PayloadDialog(QDialog):
         self.setWindowTitle(f"Confirm sending to {service}")
         self.resize(760, 620)
         layout = QVBoxLayout(self)
-        description = QLabel(
-            f"Recipient: {endpoint}\n"
-            "This is the exact content being sent. Sample numbers and filenames are not included."
-        )
+        description = QLabel(f"Recipient: {endpoint}")
         description.setWordWrap(True)
         layout.addWidget(description)
         if service == 'ARResT':
@@ -193,9 +187,6 @@ class PreviewDialog(QDialog):
         self.setWindowTitle("Preview Pseudonymized FASTA")
         self.resize(760, 620)
         layout = QVBoxLayout(self)
-        label = QLabel("This is the payload that can be saved or sent. No data is sent yet.")
-        label.setWordWrap(True)
-        layout.addWidget(label)
         preview = QPlainTextEdit()
         preview.setReadOnly(True)
         preview.setPlainText(payload)
@@ -343,29 +334,19 @@ class MainWindow(QMainWindow):
         top_bar.setSpacing(16)
         title_column = QVBoxLayout()
         title_column.setSpacing(2)
-        self.page_step = QLabel("01 / PREPARE")
-        self.page_step.setObjectName("PageStep")
         self.page_title = QLabel("Run")
         self.page_title.setObjectName("PageTitle")
         self.page_title.setAccessibleName("Current page")
-        title_column.addWidget(self.page_step)
         title_column.addWidget(self.page_title)
         top_bar.addLayout(title_column, 1)
-        privacy = QLabel("Local sample mapping")
-        privacy.setObjectName("PrivacyBadge")
-        privacy.setToolTip(
-            "Raw files and linkage data are stored locally. External sending requires explicit confirmation."
-        )
-        privacy.setFixedHeight(28)
-        top_bar.addWidget(privacy)
         content_layout.addLayout(top_bar)
 
         # Metric cards
         cards = QHBoxLayout()
         cards.setSpacing(12)
-        self.row_card = MetricCard("Merged rows", "Leader + FR1", Palette.ink)
-        self.control_card = MetricCard("Control errors", "Requires follow-up", Palette.error)
-        self.support_card = MetricCard("FR1 support", "Exact overlaps", Palette.success)
+        self.row_card = MetricCard("Merged rows", Palette.ink)
+        self.control_card = MetricCard("Control errors", Palette.error)
+        self.support_card = MetricCard("FR1 support", Palette.success)
         for card in (self.row_card, self.control_card, self.support_card):
             cards.addWidget(card)
         content_layout.addLayout(cards)
@@ -380,16 +361,6 @@ class MainWindow(QMainWindow):
         self.page_stack.addWidget(self._settings_tab())
         content_layout.addWidget(self.page_stack, 1)
 
-        # Footer
-        footer = QHBoxLayout()
-        footer_text = QLabel(
-            "Raw files stay unchanged. External sending always requires confirmation."
-        )
-        footer_text.setObjectName("FooterText")
-        footer.addWidget(footer_text)
-        footer.addStretch()
-        content_layout.addLayout(footer)
-
         main_layout.addWidget(content, 1)
         self.setCentralWidget(root)
 
@@ -398,12 +369,6 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        intro = QLabel(
-            "Select the folder containing Leader and FR1 output, then validate the run."
-        )
-        intro.setObjectName("PageIntro")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
 
         group = QGroupBox("Run folder")
         grid = QGridLayout(group)
@@ -432,11 +397,11 @@ class MainWindow(QMainWindow):
         self.file_table.setAccessibleName("Detected sample files")
         self.file_section = TableSection(
             self.file_table, "Detected samples",
-            "No run has been validated.\nChoose a run folder above to review detected samples and file counts.",
+            "Validate a run to load samples.",
             "samples",
         )
         layout.addWidget(self.file_section, 1)
-        self.run_message = QLabel("Select a run folder and validate before export.")
+        self.run_message = QLabel("No run validated.")
         self.run_message.setObjectName("InfoCallout")
         self.run_message.setWordWrap(True)
         layout.addWidget(self.run_message)
@@ -447,30 +412,19 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        intro = QLabel(
-            "Run controls are shown separately for Leader and FR1. "
-            "Status must be assessed according to local procedure."
-        )
-        intro.setObjectName("PageIntro")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
         self.control_table = QTableWidget(0, 4)
         self.control_table.setHorizontalHeaderLabels(["Control", "Target", "Status", "Details"])
         self._configure_table(self.control_table)
         self.control_table.setAccessibleName("Run controls")
         self.control_section = TableSection(
             self.control_table, "Quality controls",
-            "No controls to review yet.\nValidate a run on the Run page to load Leader and FR1 control results.",
+            "Validate a run to load controls.",
             "controls",
         )
         self.control_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         for column in range(3):
             self.control_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.control_section, 1)
-        note = QLabel("Control results support manual review. Assess all findings according to local procedure.")
-        note.setObjectName("InfoCallout")
-        note.setWordWrap(True)
-        layout.addWidget(note)
         return page
 
     def _external_tab(self) -> QWidget:
@@ -478,14 +432,6 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-
-        information = QLabel(
-            "Select Leader and FR1 sequences for analysis. Sending replaces local sample identifiers "
-            "with random external IDs and includes only the FASTA header and nucleotide sequence."
-        )
-        information.setObjectName("PrivacyCallout")
-        information.setWordWrap(True)
-        layout.addWidget(information)
 
         filter_bar = QHBoxLayout()
         self.candidate_search = QLineEdit()
@@ -519,7 +465,7 @@ class MainWindow(QMainWindow):
                 "Select",
                 "External ID",
                 "Molecule",
-                "Sample (local only)",
+                "Sample",
                 "Target",
                 "Rank",
                 "% reads",
@@ -544,7 +490,7 @@ class MainWindow(QMainWindow):
         self.candidate_table.setAccessibleName("Leader and FR1 candidates for external analysis")
         self.candidate_section = TableSection(
             self.candidate_table, "Sequence candidates",
-            "No sequences are loaded.\nValidate a run on the Run page, then select candidates for analysis.",
+            "Validate a run to load sequences.",
             "candidates",
         )
         layout.addWidget(self.candidate_section, 1)
@@ -552,7 +498,7 @@ class MainWindow(QMainWindow):
         # Separate sequence submission from the evidence and report workflow.
         action_groups = QHBoxLayout()
         action_groups.setSpacing(12)
-        analysis_group = QGroupBox("Analysis · selected sequences")
+        analysis_group = QGroupBox("Analysis")
         analysis_grid = QGridLayout(analysis_group)
         analysis_grid.setSpacing(8)
         self.preview_fasta_button = QPushButton("Preview FASTA")
@@ -582,7 +528,7 @@ class MainWindow(QMainWindow):
         self.evidence_manifest = None
         self.report_button = QPushButton("Report draft")
         self.report_button.setAccessibleName("Generate report draft")
-        self.report_button.setToolTip("After completed IMGT analysis, generate report drafts in Word, PDF and Excel per sample.")
+        self.report_button.setToolTip("Generate Word and Excel reports per sample.")
         self.report_button.setEnabled(False)
         self.report_button.clicked.connect(self._generate_reports)
         analysis_grid.addWidget(self.preview_fasta_button, 0, 0)
@@ -591,7 +537,7 @@ class MainWindow(QMainWindow):
         analysis_grid.addWidget(self.send_arrest_button, 1, 1)
         analysis_grid.setColumnStretch(0, 1)
         analysis_grid.setColumnStretch(1, 1)
-        documentation_group = QGroupBox("Documentation · evidence & drafts")
+        documentation_group = QGroupBox("Reports and images")
         documentation_grid = QGridLayout(documentation_group)
         documentation_grid.setSpacing(8)
         documentation_grid.addWidget(self.capture_button, 0, 0, 1, 2)
@@ -611,9 +557,7 @@ class MainWindow(QMainWindow):
         self.external_progress.setAccessibleName("External analysis in progress")
         layout.addWidget(self.external_progress)
 
-        self.external_status = QLabel(
-            "No sequences have been sent. Maximum 50 sequences per batch."
-        )
+        self.external_status = QLabel("No analysis started.")
         self.external_status.setObjectName("StatusCallout")
         self.external_status.setWordWrap(True)
         layout.addWidget(self.external_status)
@@ -624,21 +568,14 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        intro = QLabel(
-            f"EXPORT · Create a single compatible merged sheet with {len(HEADERS)} columns. "
-            "Existing files are overwritten only after confirmation."
-        )
-        intro.setObjectName("PageIntro")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-        excel_group = QGroupBox("1 · Choose workbook destination")
+        excel_group = QGroupBox("Excel file")
         grid = QGridLayout(excel_group)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(12)
         self.output_edit = QLineEdit()
         self.output_edit.setClearButtonEnabled(True)
         self.output_edit.setAccessibleName("Filename for merged Excel")
-        self.output_edit.setPlaceholderText("Validate a run to suggest a destination, or select an .xlsx file")
+        self.output_edit.setPlaceholderText("Select an .xlsx file")
         output_browse = QPushButton("Select file")
         output_browse.clicked.connect(self._browse_output)
         self.export_button = QPushButton("Export merged.xlsx")
@@ -646,7 +583,7 @@ class MainWindow(QMainWindow):
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export_excel)
         self.highlight_excel_checkbox = QCheckBox(
-            "Highlight app's yellow candidate rows in Excel"
+            "Highlight candidate rows in yellow"
         )
         self.highlight_excel_checkbox.setToolTip(
             f"Colors the same preliminary Leader candidates yellow across all {len(HEADERS)} columns."
@@ -656,16 +593,9 @@ class MainWindow(QMainWindow):
         grid.addWidget(output_browse, 0, 2)
         grid.setColumnStretch(1, 1)
         layout.addWidget(excel_group)
-        formatting_group = QGroupBox("2 · Workbook formatting")
+        formatting_group = QGroupBox("Formatting")
         formatting_layout = QVBoxLayout(formatting_group)
         formatting_layout.addWidget(self.highlight_excel_checkbox)
-        export_note = QLabel(
-            "The merged workbook contains one sheet with formulas and conditional formatting. "
-            "Yellow candidate highlighting is optional and off by default."
-        )
-        export_note.setObjectName("SecondaryText")
-        export_note.setWordWrap(True)
-        formatting_layout.addWidget(export_note)
         layout.addWidget(formatting_group)
         export_row = QHBoxLayout()
         self.export_readiness = QLabel("Validate a run on the Run page before exporting.")
@@ -674,14 +604,6 @@ class MainWindow(QMainWindow):
         export_row.addWidget(self.export_readiness, 1)
         export_row.addWidget(self.export_button)
         layout.addLayout(export_row)
-        reports_note = QLabel(
-            "Need a report package? On IMGT & ARResT, complete IMGT analysis and choose Report draft "
-            "for Word, PDF and Excel per sample. Each sample workbook includes an overview, "
-            "a sheet per rearrangement, and fields for manual LVMS and Sanger documentation."
-        )
-        reports_note.setObjectName("InfoCallout")
-        reports_note.setWordWrap(True)
-        layout.addWidget(reports_note)
         layout.addStretch()
         return page
 
@@ -690,14 +612,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        intro = QLabel(
-            "SETTINGS   Local default choices for this Windows user. "
-            "Clinical control limits are versioned and write-protected."
-        )
-        intro.setObjectName("PageIntro")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-        group = QGroupBox("Local settings")
+        group = QGroupBox("Defaults")
         form = QFormLayout(group)
         self.default_data_edit = QLineEdit(
             self.settings.value("defaultDataDirectory", str(Path.home() / "Documents" / "IGHV-data"))
@@ -710,9 +625,9 @@ class MainWindow(QMainWindow):
         self.expected_spin.setAccessibleName("Expected samples per target")
         self.lymphotrack_version_edit = QLineEdit(self.settings.value("lymphotrackVersion", "2.4.6"))
         self.lymphotrack_version_edit.setAccessibleName("LymphoTrack version")
-        self.lymphotrack_version_edit.setPlaceholderText("Optional · not specified when empty")
+        self.lymphotrack_version_edit.setPlaceholderText("e.g. 2.4.6")
         self.lymphotrack_version_edit.setToolTip(
-            "Enter the version from the analysis software or run metadata. An empty value is reported as not specified."
+            "LymphoTrack version used for this run."
         )
         save = QPushButton("Save settings")
         save.setObjectName("PrimaryButton")
@@ -731,8 +646,7 @@ class MainWindow(QMainWindow):
         rules_layout = QVBoxLayout(rules)
         rules_text = QLabel(
                 "IGH-PK ≥2.5 % | IGH-SHM ≥2.5 % and mutation ≥2.0 % | "
-                "NGS NEG <1.0 % | NTC <10 000 reads\n"
-                "Leader and FR1 are controlled separately. Samples are assessed manually."
+                "NGS NEG <1.0 % | NTC <10 000 reads"
         )
         rules_text.setWordWrap(True)
         rules_layout.addWidget(rules_text)
@@ -764,7 +678,6 @@ class MainWindow(QMainWindow):
     def _switch_page(self, index: int) -> None:
         self.page_stack.setCurrentIndex(index)
         self.page_title.setText(self.nav_buttons[index].text())
-        self.page_step.setText(("01 / PREPARE", "02 / REVIEW", "03 / ANALYZE", "04 / EXPORT", "PREFERENCES")[index])
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == index)
 
@@ -1483,28 +1396,18 @@ class MainWindow(QMainWindow):
             QLabel#SidebarStatusBadge[tone="success"] {{ background: {Palette.pale_success}; color: {Palette.success}; }}
             QLabel#SidebarStatusBadge[tone="error"] {{ background: {Palette.pale_error}; color: {Palette.error}; }}
             QLabel#SidebarVersion {{ color: {Palette.sidebar_muted}; font-size: 8pt; padding-top: 4px; }}
-            QLabel#PageStep {{ color: {Palette.muted}; font-size: 8pt; font-weight: 600; }}
             QLabel#PageTitle {{ color: {Palette.ink}; font-size: 22pt; font-weight: 700; }}
-            QLabel#PrivacyBadge {{
-                background: {Palette.panel}; color: {Palette.accent_hover}; border: 1px solid {Palette.border};
-                border-radius: 4px; padding: 4px 10px; font-size: 8pt; font-weight: 600;
-            }}
             QFrame#MetricCard {{ background: {Palette.panel}; border: 1px solid {Palette.border}; border-radius: 6px; }}
             QLabel#MetricLabel {{ color: {Palette.ink}; font-size: 9pt; font-weight: 600; }}
             QLabel#MetricValue {{ font-size: 22pt; font-weight: 600; }}
-            QLabel#MetricDescription {{ color: {Palette.muted}; font-size: 8pt; }}
             QLabel#SectionTitle {{ color: {Palette.ink}; font-size: 10pt; font-weight: 600; }}
             QLabel#SecondaryText {{ color: {Palette.muted}; font-size: 9pt; }}
             QLabel#SelectionCount {{ color: {Palette.accent_hover}; font-size: 9pt; font-weight: 600; padding: 0 4px; }}
-            QLabel#PageIntro {{ color: {Palette.muted}; padding: 0; font-size: 10pt; }}
-            QLabel#InfoCallout, QLabel#StatusCallout, QLabel#PrivacyCallout {{
+            QLabel#InfoCallout, QLabel#StatusCallout {{
                 border-radius: 4px; padding: 8px 10px; font-size: 9pt;
             }}
             QLabel#InfoCallout, QLabel#StatusCallout {{
                 background: {Palette.subtle}; color: {Palette.muted}; border: 1px solid {Palette.border};
-            }}
-            QLabel#PrivacyCallout {{
-                background: {Palette.pale_accent}; color: {Palette.accent_hover}; border: 1px solid {Palette.accent_soft};
             }}
             QLabel#TableEmptyState {{
                 background: {Palette.panel}; color: {Palette.muted}; border: 1px solid {Palette.border};
@@ -1580,7 +1483,6 @@ class MainWindow(QMainWindow):
             QScrollBar::handle {{ background: {Palette.border_strong}; border-radius: 4px; min-height: 24px; min-width: 24px; }}
             QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
             QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-            QLabel#FooterText {{ color: {Palette.muted}; font-size: 8pt; }}
             QToolTip {{ background: {Palette.sidebar}; color: {Palette.sidebar_text}; border: 0; padding: 6px; }}
             """
         )
