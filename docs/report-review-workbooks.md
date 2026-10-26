@@ -40,6 +40,18 @@ Lange råd fordeles over flere Excel-rader for å unngå makshøyde på 409 pt.
 Rå HTML, URL, hentetid og hash lagres. Originale IMGT-PNG-er bevares;
 Excel bruker native beskjæring og større visningsflate.
 
+Revidert 22. oktober: IMGT-sammendraget viser lokalt DIT/prøvenummer i
+stedet for ekstern SEQ-ID. Observasjoner og ARResT-notater får linjeskift
+etter semikolon. Det dupliserte Comment-feltet utelates uten å flytte
+de øvrige feltene. J-genets identitetstekst vises i vanlig svart Calibri.
+Junction-bilder har 1463 px visningsbredde, proporsjonal høyde og låst
+størrelsesforhold. Reservert plass følger bildehøyden for å unngå overlapp.
+
+Merged-eksportens Comment-kolonne viser bare støtte- og variantforhold,
+for eksempel «Støtter Leader-1» og «(Variant av Leader-1)». Usikre
+støtteforhold beholder parentesene. De interne analysekommentarene endres
+ikke av denne presentasjonsfiltreringen; detaljer finnes i analyse/audit.
+
 Audit bevarer alle analyserte ID-er og oppgir rapporterte/støttende ID-er.
 `complete` beholdes for kompatibilitet og betyr IMGT-dekning. Eksplisitte
 felter for IMGT, ARResT og bevis synliggjør manglende data. Pakkede

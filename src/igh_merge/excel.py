@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -38,6 +39,32 @@ HEADERS = (
     "Comment",
     "Fasta",
 )
+
+
+def local_relationship_comment(value: str) -> str:
+    """Present only support/variant relationships; keep analysis notes in audit."""
+    result = []
+    for part in re.split(r'\s*[|;]\s*', str(value or '')):
+        text = part.strip()
+        parenthesized = text.startswith('(') and text.endswith(')')
+        text = text[1:-1].strip() if parenthesized else text
+        match = re.fullmatch(
+            r'(Supports|Støtter|Variant of|Variant av)\s+'
+            r'(Leader[-\s]*\d+(?:\s+(?:and|og)\s+Leader[-\s]*\d+)*)', text, re.I,
+        )
+        if not match:
+            continue
+        leaders = re.sub(r'Leader[-\s]*(\d+)', r'Leader-\1', match[2], flags=re.I)
+        leaders = re.sub(r'\b(?:and|og)\b', 'og', leaders, flags=re.I)
+        if match[1].lower().startswith('variant'):
+            translated = f'(Variant av {leaders})'
+        else:
+            translated = f'Støtter {leaders}'
+            if parenthesized:
+                translated = f'({translated})'
+        if translated not in result:
+            result.append(translated)
+    return '; '.join(result)
 
 
 class ExcelReportWriter:
@@ -88,7 +115,7 @@ class ExcelReportWriter:
                     item.run_date,
                     item.other_samples,
                     item.subset,
-                    item.comment,
+                    local_relationship_comment(item.comment),
                     item.fasta,
                 ]
             )

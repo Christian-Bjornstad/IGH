@@ -50,6 +50,7 @@ def test_sample_workbook_has_review_tabs_and_correct_sequence(tmp_path):
 def test_clinical_text_is_not_executed_as_excel_formula(tmp_path):
     rec = record()
     rec["comment"] = '=HYPERLINK("https://example.test", "open")'
+    rec["arrest_seqcure_advice"] = rec["comment"]
     path = tmp_path / "sample.xlsx"
     write_sample_workbook(path, "=SYN_SAMPLE", [rec], run_date="2099_01_02",
                           imgt_version="", imgt_release="", lymphotrack_version="1.2.3")
@@ -59,6 +60,7 @@ def test_clinical_text_is_not_executed_as_excel_formula(tmp_path):
         assert wb["Oversikt"]["A1"].data_type == "s"
         comments = [cell for row in wb["Leader-1"] for cell in row if cell.value == rec["comment"]]
         assert comments and all(cell.data_type == "s" for cell in comments)
+        assert wb['Leader-1']['B22'].value is None
         assert all(cell.data_type != "f" for sheet in wb for row in sheet for cell in row)
     finally:
         wb.close()
@@ -262,5 +264,57 @@ def test_long_seqcure_text_is_complete_across_rows_below_excel_height_limit(tmp_
         assert "".join(sheet.cell(row, 2).value for row in rows) == text
         assert all(sheet.row_dimensions[row].height <= 300 for row in rows)
         assert all(sheet.cell(row, 2).data_type == "s" for row in rows)
+    finally:
+        wb.close()
+
+
+def test_requested_cells_use_local_summary_plain_identity_and_wrapped_notes(tmp_path):
+    from openpyxl.cell.rich_text import CellRichText
+    rec = record()
+    rec['observations'] = 'J-TRP: påvist; J-PHE: ikke påvist'
+    rec['comment'] = 'IMGT: internal provenance that should not appear in B22'
+    rec['arrest_notes'] = 'SeqCure: note; Subset: unassigned; Score: minusInf'
+    rec['summary_rows'] = (
+        ('Result summary: SEQ-ABC123', 'Productive IGH rearranged sequence'),
+        ('V-GENE and allele', 'IGHV1-2*01', 'score = 123', 'identity = 97.0% (97/100 nt)'),
+        ('J-GENE and allele', 'IGHJ4*02', 'score = 80', 'identity = 90.0% (90/100 nt)'),
+        ('D-GENE and allele', 'IGHD1-1*01', 'reading frame 1'),
+        ('FR lengths', '[25.17.38.5]', '[8.8.5]', 'CARDR'),
+        ('JUNCTION', '15 nt', 'description'),
+    )
+    path = tmp_path / 'requested.xlsx'
+    write_sample_workbook(path, 'SYN_LOCAL', [rec], run_date='', imgt_version='', imgt_release='')
+    wb = load_workbook(path, rich_text=True)
+    try:
+        sheet = wb['Leader-1']
+        assert str(sheet['B19'].value) == 'J-TRP: påvist;\nJ-PHE: ikke påvist'
+        assert sheet['B22'].value is None
+        assert str(sheet['A25'].value) == 'Result summary: SYN_LOCAL'
+        assert str(sheet['B32'].value) == 'SeqCure: note;\nSubset: unassigned;\nScore: minusInf'
+        assert sheet['D27'].font.name == 'Calibri' and not sheet['D27'].font.bold
+        assert sheet['D27'].font.color.rgb[-6:] == '000000'
+        assert not isinstance(sheet['D27'].value, CellRichText)
+    finally:
+        wb.close()
+
+
+def test_junction_matches_large_reference_width_and_locks_aspect_ratio(tmp_path):
+    from PIL import Image as RasterImage, ImageDraw
+    from igh_merge.report_workbook import _image_box
+    source = tmp_path / '06_junction.png'
+    image = RasterImage.new('RGB', (1600, 650), 'white')
+    ImageDraw.Draw(image).rectangle((15, 30, 1500, 600), fill='black')
+    image.save(source)
+    rec = record()
+    rec['images'] = (str(source),)
+    path = tmp_path / 'junction.xlsx'
+    write_sample_workbook(path, 'SYN_LOCAL', [rec], run_date='', imgt_version='', imgt_release='')
+    wb = load_workbook(path)
+    try:
+        picture = wb['Leader-1']._images[0]
+        left, top, right, bottom = _image_box(source)
+        assert picture.anchor.ext.cx / 9525 == pytest.approx(1463, abs=0.01)
+        assert picture.anchor.ext.cy / picture.anchor.ext.cx == pytest.approx((bottom-top)/(right-left), abs=0.0001)
+        assert picture.anchor.pic.nvPicPr.cNvPicPr.picLocks.noChangeAspect is True
     finally:
         wb.close()
