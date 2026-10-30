@@ -158,7 +158,7 @@ class RunDiscovery:
     def __init__(self, reader: SummaryReader | None = None):
         self.reader = reader or SummaryReader()
 
-    def discover(self, run_directory: Path, expected_samples: int = 24) -> RunManifest:
+    def discover(self, run_directory: Path, expected_samples: int | None = 24) -> RunManifest:
         run_directory = run_directory.expanduser().resolve()
         if not run_directory.is_dir():
             raise ValidationError(f"Run folder does not exist: {run_directory}")
@@ -211,7 +211,7 @@ class RunDiscovery:
             raise ValidationError("; ".join(parts))
 
         warnings: list[str] = []
-        if len(leader_paths) != expected_samples:
+        if expected_samples is not None and len(leader_paths) != expected_samples:
             warnings.append(
                 f"Expected {expected_samples} samples per target, found {len(leader_paths)}"
             )
@@ -225,6 +225,6 @@ class RunDiscovery:
             run_directory=run_directory,
             run_date=run_date,
             sample_files=tuple(files),
-            expected_samples=expected_samples,
+            expected_samples=expected_samples if expected_samples is not None else len(leader_paths),
             warnings=tuple(warnings),
         )

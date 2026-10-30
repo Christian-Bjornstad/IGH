@@ -30,7 +30,7 @@ def test_generates_local_word_excel_report_package(tmp_path):
         batch,
     )
     directory = generate_clinical_report_package(
-        tmp_path, [merged_row()], batch, imgt
+        tmp_path, [merged_row()], batch, imgt, include_word=True
     )
     pdf = directory / "SYN_LOCAL_ONLY_IGHV_report_draft.pdf"
     assert not pdf.exists()
@@ -45,7 +45,7 @@ def test_report_presentation_uses_sequence_and_declared_versions(tmp_path):
 
     batch = candidate_batch()
     directory = generate_clinical_report_package(
-        tmp_path, [merged_row()], batch, results(batch), lymphotrack_version='3.0.1',
+        tmp_path, [merged_row()], batch, results(batch), lymphotrack_version='3.0.1', include_word=True,
     )
     document = Document(directory / 'SYN_LOCAL_ONLY_IGHV_report_draft.docx')
     text = '\n'.join(p.text for p in document.paragraphs)
@@ -65,7 +65,7 @@ def test_unknown_lymphotrack_version_is_explicit(tmp_path):
     from test_report_package import results
 
     batch = candidate_batch()
-    directory = generate_clinical_report_package(tmp_path, [merged_row()], batch, results(batch))
+    directory = generate_clinical_report_package(tmp_path, [merged_row()], batch, results(batch), include_word=True)
     document = Document(directory / 'SYN_LOCAL_ONLY_IGHV_report_draft.docx')
     assert 'LymphoTrack version: not provided' in '\n'.join(p.text for p in document.paragraphs)
 
@@ -89,7 +89,7 @@ def test_reports_keep_five_imgt_crops_and_copyable_summary(tmp_path):
         paths.append(image)
     evidence = save_evidence_manifest(source, batch, batch.candidates[0],
                                       dict.fromkeys(sections, 'copyable source text'), paths, parameters={})
-    directory = generate_clinical_report_package(tmp_path, [merged_row()], batch, results(batch), evidence=evidence)
+    directory = generate_clinical_report_package(tmp_path, [merged_row()], batch, results(batch), evidence=evidence, include_word=True)
     document = Document(directory / 'SYN_LOCAL_ONLY_IGHV_report_draft.docx')
     assert len(document.inline_shapes) == 5
     assert 'copyable source text' in '\n'.join(p.text for p in document.paragraphs)
@@ -108,7 +108,7 @@ def test_reports_allow_long_source_comments_to_span_pages(tmp_path):
     row = merged_row()
     row.comment = 'Long factual source comment. ' * 500
     batch = candidate_batch()
-    directory = generate_clinical_report_package(tmp_path, [row], batch, results(batch))
+    directory = generate_clinical_report_package(tmp_path, [row], batch, results(batch), include_word=True)
     document = Document(directory / 'SYN_LOCAL_ONLY_IGHV_report_draft.docx')
     assert any(row.comment == cells.cells[1].text for table in document.tables for cells in table.rows)
     assert not document._element.xpath('.//w:trHeight[@w:hRule="exact"]')

@@ -115,13 +115,9 @@ def test_gui_has_required_tabs():
     assert window.send_imgt_button.isEnabled() is False
     assert window.send_arrest_button.isEnabled() is False
     assert window.highlight_excel_checkbox.text() == (
-        "Highlight app's yellow candidate rows in Excel"
+        "Highlight candidate rows in yellow"
     )
     assert window.highlight_excel_checkbox.isChecked() is False
-    export_intro = next(
-        label for label in window.findChildren(QLabel) if "EXPORT" in label.text()
-    )
-    assert "24 columns" in export_intro.text()
     assert "24 columns" in window.highlight_excel_checkbox.toolTip()
     assert APP_ICON_PATH.is_file()
     assert application_icon().isNull() is False

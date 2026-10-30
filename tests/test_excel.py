@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from openpyxl import load_workbook
 
-from igh_merge.excel import HEADERS, ExcelReportWriter
+from igh_merge.excel import HEADERS, ExcelReportWriter, local_relationship_comment
 from igh_merge.models import MergedRow, SourceRow
 from igh_merge.privacy import PrivacyError
 from igh_merge.service import MergeService
@@ -32,6 +32,32 @@ def sample_row(percent: float = 2.5, mutation: float | None = 7.7) -> MergedRow:
         source, "SYN_A", 1, 123_456, "Leader", "gDNA", "2099_01_02",
         other_samples="SYN_B_1_FR1", comment=""
     )
+
+
+@pytest.mark.parametrize(('source', 'expected'), [
+    ('Supports Leader-1 | IMGT 3.8.3: productive; identity=98% | ARResT: unassigned', 'Støtter Leader-1'),
+    ('(Supports Leader-3); Supports Leader-1 and Leader-2 | IMGT: not productive', '(Støtter Leader-3); Støtter Leader-1 og Leader-2'),
+    ('Variant of Leader-2 | IMGT: productive', '(Variant av Leader-2)'),
+    ('(Variant av leader 2); Støtter Leader-3', '(Variant av Leader-2); Støtter Leader-3'),
+    ('IMGT: productive; J=IGHJ4*02 F | ARResT: note', ''),
+])
+def test_export_comments_keep_norwegian_relationships_only(source, expected):
+    assert local_relationship_comment(source) == expected
+
+
+def test_export_cleans_comments_without_mutating_analysis_or_other_values(tmp_path):
+    row = sample_row()
+    row.comment = 'Variant of Leader-1 | IMGT: productive | ARResT: unassigned'
+    output = tmp_path / 'merged.xlsx'
+    ExcelReportWriter().write([row], output)
+    wb = load_workbook(output)
+    try:
+        assert wb.active['W2'].value == '(Variant av Leader-1)'
+        assert wb.active['C2'].value == row.source.sequence
+        assert wb.active['P2'].value == row.sample
+        assert row.comment.endswith('ARResT: unassigned')
+    finally:
+        wb.close()
 
 
 def test_excel_layout_formula_and_formats(tmp_path: Path):

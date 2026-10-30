@@ -9,7 +9,7 @@ from pathlib import Path
 
 FORBIDDEN_SUFFIXES = {
     ".xlsx", ".xls", ".xlsm", ".xlsb", ".fastq", ".fq", ".fasta", ".fa",
-    ".fna", ".pdf", ".tsv", ".csv", ".rdata",
+    ".fna", ".pdf", ".tsv", ".csv", ".rdata", ".ighv",
 }
 FORBIDDEN_NAME_PARTS = {
     "ighv-shm_output", "leader_output", "igh_fr1_output", "merged_updated",

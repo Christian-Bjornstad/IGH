@@ -130,7 +130,7 @@ def test_report_package_writes_word_and_excel(tmp_path: Path) -> None:
         batch,
     )
     directory = generate_clinical_report_package(
-        tmp_path, [merged_row()], batch, imgt,
+        tmp_path, [merged_row()], batch, imgt, include_word=True,
     )
     pdf = directory / "SYN_LOCAL_ONLY_IGHV_report_draft.pdf"
     docx = directory / "SYN_LOCAL_ONLY_IGHV_report_draft.docx"

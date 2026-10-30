@@ -522,6 +522,8 @@ def generate_clinical_report_package(
     arrest: ArrestBatchResult | None = None,
     *, evidence: EvidenceManifest | None = None,
     lymphotrack_version: str = '',
+    control_limits: dict | None = None,
+    include_word: bool = False,
 ) -> Path:
     output = run_directory.resolve() / f"{batch.run_date}_reports" / batch.session_id
     ensure_outside_git(output)
@@ -563,16 +565,13 @@ def generate_clinical_report_package(
             safe_names[sample] = name + '_' + hashlib.sha256(sample.encode()).hexdigest()[:8]
     for sample, records in by_sample.items():
         name = safe_names[sample]
-        _write_sample_docx(
-            output / f"{name}_IGHV_report_draft.docx",
-            sample,
-            records,
-            batch.run_date,
-            imgt.program_version,
-            imgt.reference_release,
-            has_arrest=bool(arrest),
-            lymphotrack_version=lymphotrack_version,
-        )
+        if include_word:
+            _write_sample_docx(
+                output / f"{name}_IGHV_report_draft.docx",
+                sample, records, batch.run_date,
+                imgt.program_version, imgt.reference_release,
+                has_arrest=bool(arrest), lymphotrack_version=lymphotrack_version,
+            )
         write_sample_workbook(
             output / f'{name}_IGHV_analysis.xlsx', sample, records,
             run_date=batch.run_date, imgt_version=imgt.program_version,
@@ -630,6 +629,7 @@ def generate_clinical_report_package(
         "imgt_version": imgt.program_version,
         "imgt_reference_release": imgt.reference_release,
         "lymphotrack_version": lymphotrack_version,
+        "control_limits": control_limits,
         "imgt_records": [asdict(item) for item in imgt.records],
         "arrest_records": [asdict(item) for item in arrest.records]
         if arrest

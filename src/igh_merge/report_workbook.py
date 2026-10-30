@@ -13,7 +13,7 @@ from openpyxl.cell.text import InlineFont
 from openpyxl.drawing.fill import Blip, RelativeRect
 from openpyxl.drawing.geometry import PresetGeometry2D
 from openpyxl.drawing.image import Image
-from openpyxl.drawing.picture import PictureFrame
+from openpyxl.drawing.picture import PictureFrame, PictureLocking
 from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
 from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -31,6 +31,7 @@ IMGT_YELLOW = "FEFFDF"
 IMGT_BLUE = "170A9B"
 IMGT_ORANGE = "C75B00"
 IMAGE_SECTIONS = {"01_v_gene", "02_d_gene", "03_j_gene", "06_junction", "09_v_region_translation"}
+JUNCTION_WIDTH_PX = 1463
 RESULT_FIELDS = (
     ("External ID", "external_id"), ("Target fraction", "leader_fraction"),
     ("FR1 support", "fr1_support"), ("IGHV / IGHD / IGHJ", "genes"),
@@ -156,9 +157,12 @@ def _highlight(value, pattern, color):
     return CellRichText(pieces)
 
 
-def _summary(sheet, row, values):
+def _summary(sheet, row, values, *, sample=""):
     label = str(values[0])
     visible = list(values[:3]) + ([" | ".join(str(value) for value in values[3:])] if len(values) > 3 else [])
+    if sample and label.startswith('Result summary:'):
+        label = f'Result summary: {sample}'
+        visible[0] = label
     if len(values) == 2:
         sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=4)
     for column, value in enumerate(visible, start=1):
@@ -169,7 +173,7 @@ def _summary(sheet, row, values):
         elif label.startswith("Result summary"):
             pattern = r"(?<=Result summary: ).+" if column == 1 else r"(?:Unproductive|Productive) IGH rearranged sequence"
             value = _highlight(value, pattern, IMGT_ORANGE)
-        elif column >= 2 and "identity" in value.lower():
+        elif column >= 2 and "identity" in value.lower() and not (column == 4 and label.startswith('J-GENE')):
             value = _highlight(value, r"\d+(?:\.\d+)?%", IMGT_ORANGE)
         cell = _text(sheet, row, column, value)
         cell.font = Font(name="Calibri", size=11, color=color)
@@ -216,12 +220,14 @@ def _picture(sheet, row, filename, image_id):
     source_width, source_height = picture.width, picture.height
     left, top, right, bottom = _image_box(filename)
     visible_width, visible_height = right - left, bottom - top
-    scale = 790 / visible_width
+    display_width = JUNCTION_WIDTH_PX if Path(filename).stem == '06_junction' else 790
+    scale = display_width / visible_width
     picture.width, picture.height = visible_width * scale, visible_height * scale
     frame = PictureFrame()
     frame.nvPicPr.cNvPr.id = image_id
     frame.nvPicPr.cNvPr.name = Path(filename).stem
     frame.nvPicPr.cNvPr.descr = "Picture"
+    frame.nvPicPr.cNvPicPr.picLocks = PictureLocking(noChangeAspect=True)
     frame.blipFill.blip = Blip(cstate="print")
     # DrawingML percentages are integer thousandths of a percent: 100000=100%.
     frame.blipFill.srcRect = RelativeRect(l=round(100000 * left / source_width), t=round(100000 * top / source_height),
@@ -247,6 +253,10 @@ def _rearrangement(sheet, sample, rec):
     _wide_text(sheet, 4, sequence or rec.get("sequence", ""))
     sheet.row_dimensions[4].height = max(30, 15 * (len(sequence) // 100 + 1))
     for row, (label, key) in enumerate(RESULT_FIELDS, start=6):
+        if key == 'comment':
+            # Keep the surrounding cell coordinates stable, without redundant notes.
+            sheet.row_dimensions[row].height = 15
+            continue
         value = rec.get(key, "-")
         _field(sheet, row, label, _observations(value) if key == "observations" else value)
     row = 6 + len(RESULT_FIELDS) + 1
@@ -254,7 +264,7 @@ def _rearrangement(sheet, sample, rec):
         _heading(sheet, row, "IMGT result fields")
         for values in rec["summary_rows"]:
             row += 1
-            _summary(sheet, row, values)
+            _summary(sheet, row, values, sample=sample)
         row += 2
     else:
         _heading(sheet, row, "IMGT result fields")
@@ -263,7 +273,8 @@ def _rearrangement(sheet, sample, rec):
             _wide_text(sheet, row, line)
             sheet.row_dimensions[row].height = 15 * _lines(line, 100)
         row += 2
-    _field(sheet, row, "ARResT notes", rec.get("arrest_notes") or "No notes provided")
+    notes = re.sub(r';\s*', ';\n', rec.get("arrest_notes") or "No notes provided")
+    _field(sheet, row, "ARResT notes", notes)
     for label, key in (("SeqCure report", "arrest_seqcure_details"), ("SeqCure advice", "arrest_seqcure_advice"),
                        ("SeqCure details status", "arrest_seqcure_status")):
         if not rec.get(key):
